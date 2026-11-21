@@ -1,0 +1,210 @@
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+
+type Signal = {
+  type: "offer" | "answer" | "ice" | "hangup" | "decline";
+  from: string;
+  name?: string;
+  sdp?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit;
+  video?: boolean;
+  random?: boolean;
+};
+
+export type CallStatus = "idle" | "outgoing" | "incoming" | "active";
+type CallState = { status: CallStatus; peerId: string | null; peerName: string; video: boolean; random: boolean };
+
+type Ctx = CallState & {
+  local: MediaStream | null;
+  remote: MediaStream | null;
+  start: (peerId: string, peerName: string, video: boolean, random?: boolean) => Promise<void>;
+  accept: () => Promise<void>;
+  decline: () => void;
+  hangup: () => void;
+  setAutoAccept: (v: boolean) => void;
+  toggleMic: () => boolean;
+  toggleCam: () => boolean;
+};
+
+const CallCtx = createContext<Ctx | null>(null);
+export const useCall = () => {
+  const c = useContext(CallCtx);
+  if (!c) throw new Error("useCall outside provider");
+  return c;
+};
+
+const ICE = [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
+const IDLE: CallState = { status: "idle", peerId: null, peerName: "", video: false, random: false };
+
+export function CallProvider({ userId, myName, children }: { userId: string; myName: string; children: ReactNode }) {
+  const [state, setStateRaw] = useState<CallState>(IDLE);
+  const stateRef = useRef(state);
+  const setState = (s: CallState) => { stateRef.current = s; setStateRaw(s); };
+  const [local, setLocal] = useState<MediaStream | null>(null);
+  const [remote, setRemote] = useState<MediaStream | null>(null);
+  const pc = useRef<RTCPeerConnection | null>(null);
+  const localRef = useRef<MediaStream | null>(null);
+  const pendingOffer = useRef<Signal | null>(null);
+  const iceQueue = useRef<RTCIceCandidateInit[]>([]);
+  const autoAccept = useRef(false);
+  const outChannels = useRef(new Map<string, Promise<RealtimeChannel>>());
+
+  const send = useCallback(async (to: string, s: Omit<Signal, "from" | "name">) => {
+    let p = outChannels.current.get(to);
+    if (!p) {
+      p = new Promise<RealtimeChannel>((resolve) => {
+        const ch = supabase.channel(`call-${to}`);
+        ch.subscribe((st) => { if (st === "SUBSCRIBED") resolve(ch); });
+      });
+      outChannels.current.set(to, p);
+    }
+    const ch = await p;
+    await ch.send({ type: "broadcast", event: "signal", payload: { ...s, from: userId, name: myName } });
+  }, [userId, myName]);
+
+  const cleanup = useCallback(() => {
+    pc.current?.close();
+    pc.current = null;
+    localRef.current?.getTracks().forEach((t) => t.stop());
+    localRef.current = null;
+    pendingOffer.current = null;
+    iceQueue.current = [];
+    setLocal(null);
+    setRemote(null);
+    setState(IDLE);
+  }, []);
+
+  const makePc = (peer: string) => {
+    const conn = new RTCPeerConnection({ iceServers: ICE });
+    conn.onicecandidate = (e) => { if (e.candidate) void send(peer, { type: "ice", candidate: e.candidate.toJSON() }); };
+    conn.ontrack = (e) => { if (e.streams[0]) setRemote(e.streams[0]); };
+    conn.onconnectionstatechange = () => {
+      if (conn.connectionState === "failed" || conn.connectionState === "disconnected") {
+        if (pc.current === conn) { toast("Call ended"); cleanup(); }
+      }
+    };
+    pc.current = conn;
+    return conn;
+  };
+
+  const getMedia = async (video: boolean) => {
+    const m = await navigator.mediaDevices.getUserMedia({ audio: true, video });
+    localRef.current = m;
+    setLocal(m);
+    return m;
+  };
+
+  const flushIce = async () => {
+    for (const c of iceQueue.current) await pc.current?.addIceCandidate(c).catch(() => {});
+    iceQueue.current = [];
+  };
+
+  const start = async (peerId: string, peerName: string, video: boolean, random = false) => {
+    if (stateRef.current.status !== "idle") return;
+    try {
+      setState({ status: "outgoing", peerId, peerName, video, random });
+      const m = await getMedia(video);
+      const conn = makePc(peerId);
+      m.getTracks().forEach((t) => conn.addTrack(t, m));
+      const offer = await conn.createOffer();
+      await conn.setLocalDescription(offer);
+      await send(peerId, { type: "offer", sdp: offer, video, random });
+    } catch {
+      toast.error("Could not access microphone/camera");
+      cleanup();
+    }
+  };
+
+  const accept = async () => {
+    const offer = pendingOffer.current;
+    if (!offer?.sdp) return;
+    try {
+      const m = await getMedia(!!offer.video);
+      const conn = makePc(offer.from);
+      m.getTracks().forEach((t) => conn.addTrack(t, m));
+      await conn.setRemoteDescription(offer.sdp);
+      await flushIce();
+      const answer = await conn.createAnswer();
+      await conn.setLocalDescription(answer);
+      await send(offer.from, { type: "answer", sdp: answer });
+      setState({ ...stateRef.current, status: "active" });
+    } catch {
+      toast.error("Could not access microphone/camera");
+      void send(offer.from, { type: "decline" });
+      cleanup();
+    }
+  };
+
+  const decline = () => {
+    const p = stateRef.current.peerId;
+    if (p) void send(p, { type: "decline" });
+    cleanup();
+  };
+  const hangup = () => {
+    const p = stateRef.current.peerId;
+    if (p) void send(p, { type: "hangup" });
+    cleanup();
+  };
+
+  // stable handler via ref
+  const handler = useRef<(s: Signal) => void>(() => {});
+  handler.current = async (s: Signal) => {
+    const cur = stateRef.current;
+    if (s.type === "offer") {
+      if (cur.status !== "idle") { void send(s.from, { type: "decline" }); return; }
+      if (s.random && !autoAccept.current) { void send(s.from, { type: "decline" }); return; }
+      pendingOffer.current = s;
+      setState({ status: "incoming", peerId: s.from, peerName: s.name ?? "Someone", video: !!s.video, random: !!s.random });
+      if (s.random) await accept();
+      return;
+    }
+    if (s.from !== cur.peerId) return;
+    if (s.type === "answer" && pc.current && s.sdp) {
+      await pc.current.setRemoteDescription(s.sdp);
+      await flushIce();
+      setState({ ...stateRef.current, status: "active" });
+    } else if (s.type === "ice" && s.candidate) {
+      if (pc.current?.remoteDescription) await pc.current.addIceCandidate(s.candidate).catch(() => {});
+      else iceQueue.current.push(s.candidate);
+    } else if (s.type === "hangup") {
+      if (!cur.random) toast("Call ended");
+      cleanup();
+    } else if (s.type === "decline") {
+      if (!cur.random) toast("Call declined or user busy");
+      cleanup();
+    }
+  };
+
+  useEffect(() => {
+    const ch = supabase
+      .channel(`call-${userId}`)
+      .on("broadcast", { event: "signal" }, ({ payload }) => handler.current(payload as Signal))
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+      outChannels.current.forEach((p) => p.then((c) => supabase.removeChannel(c)));
+      outChannels.current.clear();
+    };
+  }, [userId]);
+
+  const toggleMic = () => {
+    const t = localRef.current?.getAudioTracks()[0];
+    if (t) t.enabled = !t.enabled;
+    return !!t?.enabled;
+  };
+  const toggleCam = () => {
+    const t = localRef.current?.getVideoTracks()[0];
+    if (t) t.enabled = !t.enabled;
+    return !!t?.enabled;
+  };
+
+  return (
+    <CallCtx.Provider
+      value={{ ...state, local, remote, start, accept, decline, hangup, setAutoAccept: (v) => { autoAccept.current = v; }, toggleMic, toggleCam }}
+    >
+      {children}
+    </CallCtx.Provider>
+  );
+}
