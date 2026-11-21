@@ -57,7 +57,7 @@ function Discover() {
 
   const connect = async (id: string) => {
     const { error } = await supabase.from("connections").insert({ requester: me!.user.id, addressee: id });
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     toast.success("Request sent — waiting for their response");
     qc.invalidateQueries({ queryKey: ["discover"] });
   };

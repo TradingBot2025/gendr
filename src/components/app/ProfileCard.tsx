@@ -2,7 +2,7 @@ import { BadgeCheck, MapPin } from "lucide-react";
 import type { ReactNode } from "react";
 import { ageOf, type Profile } from "@/lib/data";
 
-export function ProfileCard({ p, photo, action }: { p: Profile; photo?: string; action?: ReactNode }) {
+export function ProfileCard({ p, photo, action }: { p: Profile; photo?: string | undefined; action?: ReactNode }) {
   const age = ageOf(p.birthdate);
   return (
     <div className="overflow-hidden rounded-3xl border bg-card shadow-soft">
