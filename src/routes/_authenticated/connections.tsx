@@ -55,7 +55,7 @@ function Connections() {
   const grid = (items: typeof all, action: (d: (typeof all)[number]) => ReactNode, empty: string) =>
     items.length ? (
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((d) => <ProfileCard key={d.c.id} p={d.p} photo={d.photo ? urls[d.photo] : undefined} action={action(d)} to={`/profile/${d.p.id}`} />)}
+        {items.map((d) => <ProfileCard key={d.c.id} p={d.p} photo={d.photo ? urls[d.photo] : undefined} action={action(d)} to="/profile/$id" toParams={{ id: d.p.id }} />)}
       </div>
     ) : <p className="py-16 text-center text-muted-foreground">{empty}</p>;
 

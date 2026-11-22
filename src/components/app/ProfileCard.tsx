@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ageOf, type Profile } from "@/lib/data";
 
-export function ProfileCard({ p, photo, action, to }: { p: Profile; photo?: string | undefined; action?: ReactNode; to?: string }) {
+export function ProfileCard({ p, photo, action, to, toParams }: { p: Profile; photo?: string | undefined; action?: ReactNode; to?: string; toParams?: Record<string, string> }) {
   const age = ageOf(p.birthdate);
   
   const cardContent = (
@@ -42,7 +42,7 @@ export function ProfileCard({ p, photo, action, to }: { p: Profile; photo?: stri
 
   if (to) {
     return (
-      <Link to={to} className="overflow-hidden rounded-3xl border bg-card shadow-soft transition-shadow hover:shadow-lg cursor-pointer">
+      <Link to={to} params={toParams} className="overflow-hidden rounded-3xl border bg-card shadow-soft transition-shadow hover:shadow-lg cursor-pointer">
         {cardContent}
       </Link>
     );

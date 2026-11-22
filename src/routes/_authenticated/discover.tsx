@@ -141,7 +141,7 @@ function Discover() {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {list.map((p) => {
               const path = data?.firstPhoto[p.id];
-              return <ProfileCard key={p.id} p={p} photo={path ? urls[path] : undefined} action={actionFor(p.id)} to={`/profile/${p.id}`} />;
+              return <ProfileCard key={p.id} p={p} photo={path ? urls[path] : undefined} action={actionFor(p.id)} to="/profile/$id" toParams={{ id: p.id }} />;
             })}
           </div>
         )
@@ -164,7 +164,8 @@ function Discover() {
                     key={v.id}
                     p={p}
                     photo={path ? urls[path] : undefined}
-                    to={`/profile/${p.id}`}
+                    to="/profile/$id"
+                    toParams={{ id: p.id }}
                     action={
                       <div className="flex gap-2">
                         {already ? <Button asChild variant="success" className="flex-1"><Link to={`/chat/${connId}`}>Chat</Link></Button> : <Button variant="hero" className="flex-1" onClick={() => connect(p.id)}>Connect</Button>}
