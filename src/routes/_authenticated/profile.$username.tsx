@@ -55,7 +55,15 @@ function ProfileView() {
     queryKey: ["profile-view", username],
     enabled: !!uid,
     queryFn: async () => {
-      const { data: p } = await supabase.from("profiles").select("*").eq("username", username).maybeSingle();
+      // Try to find by username first, then fall back to ID (for legacy users without username)
+      let { data: p } = await supabase.from("profiles").select("*").eq("username", username).maybeSingle();
+      
+      // If not found by username, try by ID (in case username is a UUID)
+      if (!p) {
+        const { data: pById } = await supabase.from("profiles").select("*").eq("id", username).maybeSingle();
+        p = pById;
+      }
+      
       if (!p) return null;
       // Check connection status first to determine photo/album visibility
       const { data: conns } = await supabase.from("connections").select("*");

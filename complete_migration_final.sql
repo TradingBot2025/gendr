@@ -30,6 +30,30 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 CREATE INDEX IF NOT EXISTS profiles_username_idx ON public.profiles(username);
 
+-- 2b. Generate usernames for existing users who don't have one
+DO $$
+DECLARE
+  rec RECORD;
+  base_username text;
+  final_username text;
+  counter int;
+BEGIN
+  FOR rec IN SELECT id, display_name, email FROM public.profiles WHERE username IS NULL LOOP
+    base_username := COALESCE(rec.display_name, SPLIT_PART(rec.email, '@', 1));
+    base_username := lower(regexp_replace(base_username, '[^a-z0-9_]', '', 'g'));
+    base_username := substring(base_username from 1 for 30);
+    
+    final_username := base_username;
+    counter := 1;
+    WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = final_username) LOOP
+      final_username := base_username || counter;
+      counter := counter + 1;
+    END LOOP;
+    
+    UPDATE public.profiles SET username = final_username WHERE id = rec.id;
+  END LOOP;
+END $$;
+
 -- 3. user_roles
 CREATE TABLE IF NOT EXISTS public.user_roles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
