@@ -193,7 +193,7 @@ function Admin() {
               <Table>
                 <TableHeader><TableRow><TableHead>Reporter</TableHead><TableHead>Reported</TableHead><TableHead>Reason</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {reports.data.map((r) => (
+                  {reports.data?.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell>{(r as any).reporter?.display_name ?? "—"}</TableCell>
                       <TableCell>{(r as any).reported?.display_name ?? "—"}</TableCell>
@@ -219,7 +219,7 @@ function Admin() {
               <Table>
                 <TableHeader><TableRow><TableHead>Admin</TableHead><TableHead>Target</TableHead><TableHead>Action</TableHead><TableHead>Details</TableHead><TableHead>When</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {actions.data.map((a) => (
+                  {actions.data?.map((a) => (
                     <TableRow key={a.id}>
                       <TableCell>{(a as any).admin?.display_name ?? "—"}</TableCell>
                       <TableCell>{(a as any).target?.display_name ?? "—"}</TableCell>

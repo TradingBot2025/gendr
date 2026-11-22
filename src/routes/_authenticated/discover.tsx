@@ -152,7 +152,7 @@ function Discover() {
             <p className="py-20 text-center text-muted-foreground">No one has viewed your profile yet.</p>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {viewed.data.views.map((v) => {
+              {viewed.data?.views.map((v) => {
                 const p = data?.profiles.find((x) => x.id === v.viewer_id);
                 if (!p) return null;
                 const path = data?.firstPhoto[p.id];

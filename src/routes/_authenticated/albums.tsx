@@ -89,7 +89,7 @@ function Albums() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {albums.map((a) => (
+          {albums?.map((a) => (
             <div key={a.id} className="rounded-3xl border bg-card p-5 shadow-soft">
               <div className="flex items-center justify-between mb-3">
                 <span className="font-semibold">{a.name}</span>
