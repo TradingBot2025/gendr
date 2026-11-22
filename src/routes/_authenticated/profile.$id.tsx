@@ -48,10 +48,20 @@ function ProfileView() {
     queryFn: async () => {
       const { data: p } = await supabase.from("profiles").select("*").eq("id", id).maybeSingle();
       if (!p) return null;
-      const [{ data: photos }, { data: conns }] = await Promise.all([
-        supabase.from("photos").select("*").eq("user_id", id).eq("is_private", false).order("position"),
-        supabase.from("connections").select("*"),
-      ]);
+      // Check connection status first to determine photo visibility
+      const { data: conns } = await supabase.from("connections").select("*");
+      const conn = conns?.find((c: any) => 
+        (c.requester === uid && c.addressee === id) || (c.requester === id && c.addressee === uid)
+      );
+      const isConnected = conn?.status === "accepted";
+      
+      // Fetch photos: public + private (if connected)
+      let photosQuery = supabase.from("photos").select("*").eq("user_id", id).order("position");
+      if (!isConnected) {
+        photosQuery = photosQuery.eq("is_private", false);
+      }
+      const { data: photos } = await photosQuery;
+      
       return { profile: p, photos: photos ?? [], connections: conns ?? [] };
     },
   });
@@ -90,18 +100,13 @@ function ProfileView() {
     }
     setReporting(true);
     try {
-      // Create report with reason category and description
-      const fullReason = `[${reportReason}] ${reportDescription.trim()}`;
-      await reportProfile(id, fullReason);
-      
-      // Auto-block if requested
-      if (blockAfterReport) {
-        await supabase.from("connections").upsert({
-          requester: uid!,
-          addressee: id,
-          status: "declined",
-        }, { onConflict: "requester,addressee" });
-      }
+      // Create report with enhanced fields
+      await reportProfile(id, reportDescription.trim(), {
+        reasonCategory: reportReason,
+        proofText: reportDescription.trim(),
+        proofFilePath: null, // TODO: upload proof file to storage
+        autoBlock: blockAfterReport,
+      });
       
       toast.success("Report submitted" + (blockAfterReport ? " and user blocked" : ""));
       setReportOpen(false);
