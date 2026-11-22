@@ -51,7 +51,7 @@ export function useMe() {
 }
 
 const urlCache = new Map<string, { url: string; exp: number }>();
-export async function signPaths(bucket: string, paths: string[]): Promise<Record<string, string>> {
+export async function signPaths(bucket: string, paths: string[], expiresInSeconds = 300): Promise<Record<string, string>> {
   const now = Date.now();
   const out: Record<string, string> = {};
   const need = paths.filter((p) => {
@@ -60,10 +60,10 @@ export async function signPaths(bucket: string, paths: string[]): Promise<Record
     return true;
   });
   if (need.length) {
-    const { data } = await supabase.storage.from(bucket).createSignedUrls(need, 3600);
+    const { data } = await supabase.storage.from(bucket).createSignedUrls(need, expiresInSeconds);
     data?.forEach((d) => {
       if (d.signedUrl && d.path) {
-        urlCache.set(bucket + d.path, { url: d.signedUrl, exp: now + 3500_000 });
+        urlCache.set(bucket + d.path, { url: d.signedUrl, exp: now + (expiresInSeconds - 1) * 1000 });
         out[d.path] = d.signedUrl;
       }
     });
