@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Compass, Heart, LogOut, Shield, Shuffle, User } from "lucide-react";
+import { Compass, Heart, LayoutDashboard, LogOut, Shield, Shuffle, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
 import { CallProvider } from "@/lib/calls";
@@ -41,6 +41,7 @@ function Shell() {
     );
 
   const nav = [
+    { to: "/dashboard", label: "Home", icon: LayoutDashboard },
     { to: "/discover", label: "Discover", icon: Compass },
     { to: "/connections", label: "Matches", icon: Heart },
     { to: "/random", label: "Random", icon: Shuffle },
