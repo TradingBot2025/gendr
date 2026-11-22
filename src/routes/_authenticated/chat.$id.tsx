@@ -167,6 +167,26 @@ function Chat() {
     return () => stopRingingSound();
   }, [call.status, audioEnabled]);
 
+  // Auto-increment view count for limited-view images when they come into view (for recipient)
+  useEffect(() => {
+    if (!msgs?.length) return;
+    msgs.forEach((m) => {
+      const mine = m.sender === uid;
+      const isExpired = m.expires_at && new Date(m.expires_at).getTime() < now;
+      const isViewLimited = m.max_views !== null && m.max_views !== undefined && m.view_count !== undefined && m.view_count >= m.max_views;
+      const isImage = m.attachment_type?.startsWith("image/");
+      
+      if (!mine && isImage && m.max_views && m.max_views > 0 && m.view_count !== undefined && m.view_count < m.max_views && !isExpired && !isViewLimited) {
+        if (!viewedMsgRef.current.has(m.id)) {
+          viewedMsgRef.current.add(m.id);
+          supabase.rpc("increment_message_view", { message_id: m.id }).then(() => {
+            qc.invalidateQueries({ queryKey: ["messages", id] });
+          });
+        }
+      }
+    });
+  }, [msgs, uid, now]);
+
   if (info === null) return (
     <div className="p-8 text-center"><p className="text-muted-foreground">This chat isn't available.</p><Button asChild className="mt-4"><Link to="/connections">Back to matches</Link></Button></div>
   );
