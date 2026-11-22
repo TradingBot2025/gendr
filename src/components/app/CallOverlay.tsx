@@ -6,12 +6,14 @@ import { useCall } from "@/lib/calls";
 // Audio context for mobile unlock (shared with chat)
 let audioContext: AudioContext | null = null;
 function getAudioContext() {
+  if (typeof window === "undefined") return null as any;
   if (!audioContext) audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
   return audioContext;
 }
 
 function playRingingSound() {
   const ctx = getAudioContext();
+  if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume();
   const oscillator = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -26,6 +28,7 @@ function playRingingSound() {
 }
 
 function stopRingingSound() {
+  if (typeof window === "undefined") return;
   const osc = (window as any).__callRingingOscillator;
   const gain = (window as any).__callRingingGain;
   if (osc) { try { osc.stop(); osc.disconnect(); } catch {} (window as any).__callRingingOscillator = null; }
@@ -62,6 +65,22 @@ export function CallControls() {
 export function CallOverlay() {
   const c = useCall();
   if (c.status === "idle" || c.random) return null;
+
+  // Unlock audio on first user interaction (mobile)
+  useEffect(() => {
+    function unlockAudio() {
+      const ctx = getAudioContext();
+      if (ctx?.state === "suspended") ctx.resume();
+    }
+    document.addEventListener("click", unlockAudio, { once: true });
+    document.addEventListener("touchstart", unlockAudio, { once: true });
+    document.addEventListener("keydown", unlockAudio, { once: true });
+    return () => {
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("keydown", unlockAudio);
+    };
+  }, []);
 
   // Play ringing sound on incoming call
   useEffect(() => {

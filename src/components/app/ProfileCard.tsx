@@ -7,7 +7,15 @@ export function ProfileCard({ p, photo, action }: { p: Profile; photo?: string |
   return (
     <div className="overflow-hidden rounded-3xl border bg-card shadow-soft">
       <div className="relative aspect-[4/5] bg-muted">
-        {photo ? <img src={photo} alt={p.display_name ?? ""} className="h-full w-full object-cover" loading="lazy" /> : (
+        {photo ? (
+          <img
+            src={photo}
+            alt={p.display_name ?? ""}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          />
+        ) : (
           <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">{p.display_name?.[0]}</div>
         )}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent p-4 text-stage-foreground">

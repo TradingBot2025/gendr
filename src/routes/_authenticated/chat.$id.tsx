@@ -77,20 +77,6 @@ function stopRingingSound() {
   }
 }
 
-// Unlock audio on first user interaction
-function unlockAudio() {
-  const ctx = getAudioContext();
-  if (ctx.state === "suspended") ctx.resume();
-  document.removeEventListener("click", unlockAudio);
-  document.removeEventListener("touchstart", unlockAudio);
-  document.removeEventListener("keydown", unlockAudio);
-}
-if (typeof window !== "undefined") {
-  document.addEventListener("click", unlockAudio, { once: true });
-  document.addEventListener("touchstart", unlockAudio, { once: true });
-  document.addEventListener("keydown", unlockAudio, { once: true });
-}
-
 function Chat() {
   const { id } = Route.useParams();
   const { data: me } = useMe();
@@ -109,6 +95,22 @@ function Chat() {
   const [albumPhotos, setAlbumPhotos] = useState<{ id: string; path: string; album_id: string | null }[]>([]);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
+
+  // Unlock audio on first user interaction (mobile)
+  useEffect(() => {
+    function unlockAudio() {
+      const ctx = getAudioContext();
+      if (ctx.state === "suspended") ctx.resume();
+    }
+    document.addEventListener("click", unlockAudio, { once: true });
+    document.addEventListener("touchstart", unlockAudio, { once: true });
+    document.addEventListener("keydown", unlockAudio, { once: true });
+    return () => {
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("keydown", unlockAudio);
+    };
+  }, []);
 
   // Fetch chat info
   const { data: info } = useQuery({

@@ -23,6 +23,24 @@ function Random() {
   const callRef = useRef(call); callRef.current = call;
   const searchRef = useRef(searching); searchRef.current = searching;
 
+  // Unlock audio on first user interaction (mobile)
+  useEffect(() => {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    function unlockAudio() {
+      const ctx = new AudioContext();
+      if (ctx.state === "suspended") ctx.resume();
+    }
+    document.addEventListener("click", unlockAudio, { once: true });
+    document.addEventListener("touchstart", unlockAudio, { once: true });
+    document.addEventListener("keydown", unlockAudio, { once: true });
+    return () => {
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+      document.removeEventListener("keydown", unlockAudio);
+    };
+  }, []);
+
   useEffect(() => {
     if (!uid) return;
     const c = supabase.channel("random-lobby", { config: { presence: { key: uid } } });

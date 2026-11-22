@@ -179,8 +179,16 @@ export async function logProfileView(viewedId: string) {
   if (error) throw error;
 }
 
-export async function reportProfile(reportedId: string, reason: string) {
-  const { error } = await supabase.from("reports").insert({ reporter_id: (await supabase.auth.getUser()).data.user!.id, reported_id: reportedId, reason });
+export async function reportProfile(reportedId: string, reason: string, options?: { reasonCategory?: string; proofText?: string; proofFilePath?: string; autoBlock?: boolean }) {
+  const { error } = await supabase.from("reports").insert({ 
+    reporter_id: (await supabase.auth.getUser()).data.user!.id, 
+    reported_id: reportedId, 
+    reason,
+    reason_category: options?.reasonCategory ?? null,
+    proof_text: options?.proofText ?? null,
+    proof_file_path: options?.proofFilePath ?? null,
+    auto_blocked: options?.autoBlock ?? false,
+  });
   if (error) throw error;
 }
 

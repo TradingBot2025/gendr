@@ -397,9 +397,13 @@ export type Database = {
       }
       reports: {
         Row: {
+          auto_blocked: boolean
           created_at: string
           id: string
+          proof_file_path: string | null
+          proof_text: string | null
           reason: string
+          reason_category: string | null
           reported_id: string
           reporter_id: string
           reviewed_at: string | null
@@ -407,9 +411,13 @@ export type Database = {
           status: string
         }
         Insert: {
+          auto_blocked?: boolean
           created_at?: string
           id?: string
+          proof_file_path?: string | null
+          proof_text?: string | null
           reason: string
+          reason_category?: string | null
           reported_id: string
           reporter_id: string
           reviewed_at?: string | null
@@ -417,9 +425,13 @@ export type Database = {
           status?: string
         }
         Update: {
+          auto_blocked?: boolean
           created_at?: string
           id?: string
+          proof_file_path?: string | null
+          proof_text?: string | null
           reason?: string
+          reason_category?: string | null
           reported_id?: string
           reviewer_id?: string | null
           reviewed_at?: string | null

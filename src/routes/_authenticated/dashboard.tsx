@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { BadgeCheck, Compass, Heart, MessageCircle, Shuffle, UserCheck, Users } from "lucide-react";
+import { BadgeCheck, Compass, Heart, MessageCircle, Shuffle, UserCheck, Users, Image as ImageIcon } from "lucide-react";
 import cover from "@/assets/dashboard-cover.jpg";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned } from "@/lib/data";
@@ -68,11 +68,25 @@ function Dashboard() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 p-4 md:p-8">
-      <section className="relative overflow-hidden rounded-3xl">
-        <img src={cover} alt="Friends laughing together at sunset" width={1600} height={640} className="h-56 w-full object-cover md:h-72" />
+      <section className="relative overflow-hidden rounded-3xl bg-stage">
+        <img
+          src={cover}
+          alt="Friends laughing together at sunset"
+          width={1600}
+          height={640}
+          className="h-56 w-full object-cover md:h-72 opacity-50"
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
         <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-stage/85 via-stage/30 to-transparent p-6 text-stage-foreground md:p-10">
           <div className="flex items-center gap-4">
-            {myPhoto && urls[myPhoto] && <img src={urls[myPhoto]} alt="You" className="h-16 w-16 rounded-full border-2 border-stage-foreground object-cover" />}
+            {myPhoto && urls[myPhoto] && (
+              <img
+                src={urls[myPhoto]}
+                alt="You"
+                className="h-16 w-16 rounded-full border-2 border-stage-foreground object-cover"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            )}
             <div>
               <h1 className="flex items-center gap-2 text-3xl font-bold md:text-4xl">Hi, {p?.display_name ?? "there"} {p?.verified && <BadgeCheck className="text-primary-glow" aria-label="Verified" />}</h1>
               <p className="opacity-90">Ready to meet someone new today?</p>
@@ -112,7 +126,16 @@ function Dashboard() {
               return (
                 <Link key={m.id} to="/chat/$id" params={{ id: m.id }} className="flex w-24 shrink-0 flex-col items-center gap-2 text-center">
                   <div className="relative h-20 w-20 overflow-hidden rounded-full bg-muted">
-                    {ph && urls[ph] ? <img src={urls[ph]} alt={m.name} className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-2xl">{m.name[0]}</span>}
+                    {ph && urls[ph] ? (
+                      <img
+                        src={urls[ph]}
+                        alt={m.name}
+                        className="h-full w-full object-cover"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <span className="flex h-full items-center justify-center text-2xl">{m.name[0]}</span>
+                    )}
                     <MessageCircle className="absolute bottom-1 right-1 h-5 w-5 rounded-full bg-primary p-0.5 text-primary-foreground" />
                   </div>
                   <span className="truncate text-sm">{m.name}</span>
