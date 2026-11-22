@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Compass, Heart, LayoutDashboard, LogOut, Shield, Shuffle, User, Album, Users as UsersIcon } from "lucide-react";
+import { Compass, Heart, LayoutDashboard, LogOut, Shield, Shuffle, User, Album, Users as UsersIcon, Settings } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
 import { toast } from "sonner";
@@ -38,8 +38,6 @@ function Shell() {
       .channel(`msg-notify-${me?.user.id}`)
       .on("broadcast", { event: "new_message" }, () => {
         setUnread((n) => n + 1);
-        setNotifOpen(true);
-        toastNewMessage();
       })
       .subscribe();
     return () => supabase.removeChannel(ch);
