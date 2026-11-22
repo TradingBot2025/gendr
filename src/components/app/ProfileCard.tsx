@@ -1,11 +1,13 @@
-import { BadgeCheck, MapPin } from "lucide-react";
+import { BadgeCheck, MapPin, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 import { ageOf, type Profile } from "@/lib/data";
 
-export function ProfileCard({ p, photo, action }: { p: Profile; photo?: string | undefined; action?: ReactNode }) {
+export function ProfileCard({ p, photo, action, to }: { p: Profile; photo?: string | undefined; action?: ReactNode; to?: string }) {
   const age = ageOf(p.birthdate);
+  const Content = to ? Link : "div";
   return (
-    <div className="overflow-hidden rounded-3xl border bg-card shadow-soft">
+    <Content to={to} className="overflow-hidden rounded-3xl border bg-card shadow-soft transition-shadow hover:shadow-lg cursor-pointer">
       <div className="relative aspect-[4/5] bg-muted">
         {photo ? (
           <img
@@ -25,6 +27,7 @@ export function ProfileCard({ p, photo, action }: { p: Profile; photo?: string |
           </div>
           <div className="flex items-center gap-1 text-sm opacity-90"><MapPin className="h-3.5 w-3.5" />{[p.city, p.country].filter(Boolean).join(", ")}</div>
         </div>
+        {to && <div className="absolute top-3 right-3 bg-white/90 rounded-full p-1.5 shadow"><ChevronRight className="h-4 w-4 text-muted-foreground" /></div>}
       </div>
       <div className="space-y-3 p-4">
         <div className="flex flex-wrap gap-1.5 text-xs">
@@ -34,6 +37,6 @@ export function ProfileCard({ p, photo, action }: { p: Profile; photo?: string |
         {p.bio && <p className="line-clamp-2 text-sm text-muted-foreground">{p.bio}</p>}
         {action}
       </div>
-    </div>
+    </Content>
   );
 }
