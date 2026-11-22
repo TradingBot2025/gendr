@@ -5,7 +5,6 @@ import cover from "@/assets/dashboard-cover.jpg";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned } from "@/lib/data";
 import { ProfileCard } from "@/components/app/ProfileCard";
-import { AdBanner } from "@/components/app/AdBanner";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
@@ -161,7 +160,6 @@ function Dashboard() {
         ) : <p className="text-muted-foreground">No one else has joined yet — invite your friends!</p>}
       </section>
 
-      <AdBanner position="bottom" />
-    </div>
+      </div>
   );
 }

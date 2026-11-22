@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { AdBanner } from "@/components/app/AdBanner";
 
 export const Route = createFileRoute("/_authenticated/terms")({
   head: () => ({ meta: [{ title: "Terms & Conditions — Gender" }, { name: "description", content: "Gender dating app terms of service and privacy policy." }] }),
@@ -61,8 +60,6 @@ function Terms() {
       <div className="pt-4">
         <Button variant="outline" asChild><a href="/account">Back to account</a></Button>
       </div>
-
-      <AdBanner position="bottom" />
     </div>
   );
 }

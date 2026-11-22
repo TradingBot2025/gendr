@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Shuffle, SkipForward, Square } from "lucide-react";
+import { Shuffle, SkipForward, Square, Globe } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
 import { useCall } from "@/lib/calls";
 import { MediaView } from "@/components/app/CallOverlay";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { unlockAudioContext } from "@/lib/audio";
 
 export const Route = createFileRoute("/_authenticated/random")({
@@ -14,15 +15,73 @@ export const Route = createFileRoute("/_authenticated/random")({
   component: Random,
 });
 
+// Common countries list
+const COUNTRIES = [
+  { code: "global", name: "🌍 Worldwide" },
+  { code: "US", name: "🇺🇸 United States" },
+  { code: "GB", name: "🇬🇧 United Kingdom" },
+  { code: "CA", name: "🇨🇦 Canada" },
+  { code: "AU", name: "🇦🇺 Australia" },
+  { code: "DE", name: "🇩🇪 Germany" },
+  { code: "FR", name: "🇫🇷 France" },
+  { code: "IN", name: "🇮🇳 India" },
+  { code: "BR", name: "🇧🇷 Brazil" },
+  { code: "MX", name: "🇲🇽 Mexico" },
+  { code: "ES", name: "🇪🇸 Spain" },
+  { code: "IT", name: "🇮🇹 Italy" },
+  { code: "NL", name: "🇳🇱 Netherlands" },
+  { code: "SE", name: "🇸🇪 Sweden" },
+  { code: "NO", name: "🇳🇴 Norway" },
+  { code: "DK", name: "🇩🇰 Denmark" },
+  { code: "FI", name: "🇫🇮 Finland" },
+  { code: "JP", name: "🇯🇵 Japan" },
+  { code: "KR", name: "🇰🇷 South Korea" },
+  { code: "SG", name: "🇸🇬 Singapore" },
+  { code: "NZ", name: "🇳🇿 New Zealand" },
+  { code: "IE", name: "🇮🇪 Ireland" },
+  { code: "CH", name: "🇨🇭 Switzerland" },
+  { code: "AT", name: "🇦🇹 Austria" },
+  { code: "BE", name: "🇧🇪 Belgium" },
+  { code: "PL", name: "🇵🇱 Poland" },
+  { code: "CZ", name: "🇨🇿 Czech Republic" },
+  { code: "PT", name: "🇵🇹 Portugal" },
+  { code: "GR", name: "🇬🇷 Greece" },
+  { code: "IL", name: "🇮🇱 Israel" },
+  { code: "ZA", name: "🇿🇦 South Africa" },
+  { code: "AR", name: "🇦🇷 Argentina" },
+  { code: "CL", name: "🇨🇱 Chile" },
+  { code: "CO", name: "🇨🇴 Colombia" },
+  { code: "PE", name: "🇵🇪 Peru" },
+  { code: "VE", name: "🇻🇪 Venezuela" },
+  { code: "NG", name: "🇳🇬 Nigeria" },
+  { code: "KE", name: "🇰🇪 Kenya" },
+  { code: "EG", name: "🇪🇬 Egypt" },
+  { code: "MA", name: "🇲🇦 Morocco" },
+  { code: "AE", name: "🇦🇪 UAE" },
+  { code: "SA", name: "🇸🇦 Saudi Arabia" },
+  { code: "TR", name: "🇹🇷 Turkey" },
+  { code: "RU", name: "🇷🇺 Russia" },
+  { code: "UA", name: "🇺🇦 Ukraine" },
+  { code: "PH", name: "🇵🇭 Philippines" },
+  { code: "TH", name: "🇹🇭 Thailand" },
+  { code: "VN", name: "🇻🇳 Vietnam" },
+  { code: "ID", name: "🇮🇩 Indonesia" },
+  { code: "MY", name: "🇲🇾 Malaysia" },
+  { code: "HK", name: "🇭🇰 Hong Kong" },
+  { code: "TW", name: "🇹🇼 Taiwan" },
+];
+
 function Random() {
   const { data: me } = useMe();
   const call = useCall();
   const [searching, setSearching] = useState(false);
   const [online, setOnline] = useState(0);
+  const [selectedCountry, setSelectedCountry] = useState("global");
   const ch = useRef<RealtimeChannel | null>(null);
   const uid = me?.user.id;
   const callRef = useRef(call); callRef.current = call;
   const searchRef = useRef(searching); searchRef.current = searching;
+  const countryRef = useRef(selectedCountry); countryRef.current = selectedCountry;
 
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
@@ -39,9 +98,13 @@ function Random() {
     };
   }, []);
 
+  // Build channel name based on selected country
+  const getChannelName = (country: string) => country === "global" ? "random-lobby" : `random-lobby-${country.toLowerCase()}`;
+
   useEffect(() => {
     if (!uid) return;
-    const c = supabase.channel("random-lobby", { config: { presence: { key: uid } } });
+    const channelName = getChannelName(countryRef.current);
+    const c = supabase.channel(channelName, { config: { presence: { key: uid } } });
     c.on("presence", { event: "sync" }, () => {
       const st = c.presenceState<{ waiting: boolean; name: string }>();
       setOnline(Object.keys(st).length);
@@ -56,7 +119,7 @@ function Random() {
     }).subscribe();
     ch.current = c;
     return () => { supabase.removeChannel(c); ch.current = null; callRef.current.setAutoAccept(false); if (callRef.current.random) callRef.current.hangup(); };
-  }, [uid]);
+  }, [uid, selectedCountry]);
 
   // keep presence in sync with state
   useEffect(() => {
@@ -69,12 +132,32 @@ function Random() {
   const stop = () => { setSearching(false); if (inCall) call.hangup(); };
   const next = () => { if (inCall) call.hangup(); setSearching(true); };
 
+  // Reset search when country changes
+  useEffect(() => {
+    if (searching) {
+      setSearching(false);
+    }
+  }, [selectedCountry]);
+
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-4xl font-bold">Random video</h1>
           <p className="text-muted-foreground">{online} online right now. Be kind — you can skip anytime.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Globe className="h-5 w-5 text-muted-foreground" />
+          <Select value={selectedCountry} onValueChange={setSelectedCountry} disabled={searching || inCall}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Worldwide" />
+            </SelectTrigger>
+            <SelectContent>
+              {COUNTRIES.map((c) => (
+                <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
       <div className="grid gap-4 md:grid-cols-2">

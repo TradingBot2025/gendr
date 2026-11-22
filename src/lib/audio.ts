@@ -54,41 +54,72 @@ export function playNotificationSound(): void {
   setTimeout(() => createBeep(600, 0.15, 0.3), 100);
 }
 
+// Ringing pattern state
+let ringingInterval: ReturnType<typeof setInterval> | null = null;
+let ringingOscillator: OscillatorNode | null = null;
+let ringingGain: GainNode | null = null;
+
 export function playRingingSound(): void {
   const ctx = getStoredContext();
   if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume();
   
-  try {
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    oscillator.connect(gain);
-    gain.connect(ctx.destination);
-    oscillator.frequency.value = 440;
-    oscillator.type = "sine";
-    gain.gain.value = 0.3;
-    oscillator.start();
+  // Clear any existing pattern
+  stopRingingSound();
+  
+  // Ring pattern: 1s on, 2s off, 1s on, 2s off, 1s on, 4s off (repeats)
+  const ringPattern = [
+    { on: true, duration: 1000 },   // Ring for 1s
+    { on: false, duration: 2000 },  // Silent for 2s
+    { on: true, duration: 1000 },   // Ring for 1s
+    { on: false, duration: 2000 },  // Silent for 2s
+    { on: true, duration: 1000 },   // Ring for 1s
+    { on: false, duration: 4000 },  // Silent for 4s
+  ];
+  
+  let patternIndex = 0;
+  
+  const playRing = () => {
+    const segment = ringPattern[patternIndex];
     
-    const w = window as any;
-    w.__ringingOscillator = oscillator;
-    w.__ringingGain = gain;
-  } catch {
-    // Ignore audio errors
-  }
+    if (segment.on) {
+      try {
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.frequency.value = 440;
+        oscillator.type = "sine";
+        gain.gain.value = 0.3;
+        oscillator.start();
+        
+        ringingOscillator = oscillator;
+        ringingGain = gain;
+      } catch {
+        // Ignore audio errors
+      }
+    }
+    
+    patternIndex = (patternIndex + 1) % ringPattern.length;
+    ringingInterval = setTimeout(playRing, segment.duration);
+  };
+  
+  playRing();
 }
 
 export function stopRingingSound(): void {
-  if (typeof window === "undefined") return;
-  const w = window as any;
-  const osc = w.__ringingOscillator;
-  const gain = w.__ringingGain;
-  if (osc) { 
-    try { osc.stop(); osc.disconnect(); } catch {} 
-    w.__ringingOscillator = null; 
+  if (ringingInterval) {
+    clearTimeout(ringingInterval);
+    ringingInterval = null;
   }
-  if (gain) { 
-    try { gain.disconnect(); } catch {} 
-    w.__ringingGain = null; 
+  
+  if (ringingOscillator) {
+    try { ringingOscillator.stop(); ringingOscillator.disconnect(); } catch {}
+    ringingOscillator = null;
+  }
+  if (ringingGain) {
+    try { ringingGain.disconnect(); } catch {}
+    ringingGain = null;
   }
 }
 

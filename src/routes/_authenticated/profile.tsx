@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { BadgeCheck, Camera, ImagePlus, Star, Trash2, Lock, Clock, Plus } from "lucide-react";
 import { ProfileCard } from "@/components/app/ProfileCard";
-import { AdBanner } from "@/components/app/AdBanner";
 import { supabase } from "@/integrations/supabase/client";
 import { GENDERS, ORIENTATIONS, useMe, useSigned, usePhotoAlbums, type PhotoAlbum } from "@/lib/data";
 import { verifyFace } from "@/lib/verify.functions";
@@ -172,7 +171,6 @@ function ProfilePage() {
       </form>
 
       <VerifyDialog open={verifyOpen} onOpenChange={setVerifyOpen} onDone={refresh} />
-      <AdBanner position="bottom" />
       <Dialog open={albumOpen} onOpenChange={setAlbumOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>New private album</DialogTitle></DialogHeader>
