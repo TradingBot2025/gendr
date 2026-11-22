@@ -124,34 +124,43 @@ export type Database = {
           attachment_name: string | null
           attachment_path: string | null
           attachment_type: string | null
+          attachment_viewed_at: string | null
           body: string | null
           connection_id: string
           created_at: string
           expires_at: string | null
           id: string
+          max_views: number | null
           sender: string
+          view_count: number
         }
         Insert: {
           attachment_name?: string | null
           attachment_path?: string | null
           attachment_type?: string | null
+          attachment_viewed_at?: string | null
           body?: string | null
           connection_id: string
           created_at?: string
           expires_at?: string | null
           id?: string
+          max_views?: number | null
           sender: string
+          view_count?: number
         }
         Update: {
           attachment_name?: string | null
           attachment_path?: string | null
           attachment_type?: string | null
+          attachment_viewed_at?: string | null
           body?: string | null
           connection_id?: string
           created_at?: string
           expires_at?: string | null
           id?: string
+          max_views?: number | null
           sender?: string
+          view_count?: number
         }
         Relationships: [
           {

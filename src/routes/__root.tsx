@@ -118,7 +118,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="safe-top safe-bottom safe-left safe-right min-h-screen">
         {children}
         <Scripts />
       </body>

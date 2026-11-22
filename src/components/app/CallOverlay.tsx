@@ -3,6 +3,35 @@ import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCall } from "@/lib/calls";
 
+// Audio context for mobile unlock (shared with chat)
+let audioContext: AudioContext | null = null;
+function getAudioContext() {
+  if (!audioContext) audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  return audioContext;
+}
+
+function playRingingSound() {
+  const ctx = getAudioContext();
+  if (ctx.state === "suspended") ctx.resume();
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.frequency.value = 440;
+  oscillator.type = "sine";
+  gain.gain.value = 0.3;
+  oscillator.start();
+  (window as any).__callRingingOscillator = oscillator;
+  (window as any).__callRingingGain = gain;
+}
+
+function stopRingingSound() {
+  const osc = (window as any).__callRingingOscillator;
+  const gain = (window as any).__callRingingGain;
+  if (osc) { try { osc.stop(); osc.disconnect(); } catch {} (window as any).__callRingingOscillator = null; }
+  if (gain) { try { gain.disconnect(); } catch {} (window as any).__callRingingGain = null; }
+}
+
 export function MediaView({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className?: string }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
@@ -33,6 +62,14 @@ export function CallControls() {
 export function CallOverlay() {
   const c = useCall();
   if (c.status === "idle" || c.random) return null;
+
+  // Play ringing sound on incoming call
+  useEffect(() => {
+    if (c.status === "incoming") playRingingSound();
+    else stopRingingSound();
+    return () => stopRingingSound();
+  }, [c.status]);
+  
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-stage text-stage-foreground">
       <div className="relative flex-1 overflow-hidden">

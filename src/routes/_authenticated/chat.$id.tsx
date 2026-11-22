@@ -1,19 +1,95 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, FileText, Paperclip, Phone, Send, Video, ShieldCheck, Clock } from "lucide-react";
+import { ArrowLeft, FileText, Paperclip, Phone, Send, Video, ShieldCheck, Clock, Image, Eye, EyeOff, Music, VolumeX, Mic, MicOff, Camera } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useMe, useSigned } from "@/lib/data";
+import { useMe, useSigned, useMyAlbumsWithPhotos } from "@/lib/data";
 import { useCall } from "@/lib/calls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export const Route = createFileRoute("/_authenticated/chat/$id")({
   head: () => ({ meta: [{ title: "Chat — Gender" }, { name: "description", content: "Chat, share and call your match. Messages expire after 24 hours." }] }),
   component: Chat,
 });
+
+// Notification sound
+// Audio context for mobile unlock
+let audioContext: AudioContext | null = null;
+function getAudioContext() {
+  if (!audioContext) audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  return audioContext;
+}
+
+// Generate simple beep sounds programmatically (works better on mobile)
+function createBeep(frequency: number, duration: number, volume = 0.3) {
+  const ctx = getAudioContext();
+  if (ctx.state === "suspended") ctx.resume();
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.frequency.value = frequency;
+  oscillator.type = "sine";
+  gain.gain.setValueAtTime(volume, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+  oscillator.start(ctx.currentTime);
+  oscillator.stop(ctx.currentTime + duration);
+}
+
+function playNotificationSound() {
+  createBeep(800, 0.15, 0.4);
+  setTimeout(() => createBeep(600, 0.15, 0.3), 100);
+}
+
+function playRingingSound() {
+  const ctx = getAudioContext();
+  if (ctx.state === "suspended") ctx.resume();
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.frequency.value = 440;
+  oscillator.type = "sine";
+  gain.gain.value = 0.3;
+  oscillator.start();
+  // Store for stopping
+  (window as any).__ringingOscillator = oscillator;
+  (window as any).__ringingGain = gain;
+}
+
+function stopRingingSound() {
+  const osc = (window as any).__ringingOscillator;
+  const gain = (window as any).__ringingGain;
+  if (osc) {
+    try { osc.stop(); osc.disconnect(); } catch {}
+    (window as any).__ringingOscillator = null;
+  }
+  if (gain) {
+    try { gain.disconnect(); } catch {}
+    (window as any).__ringingGain = null;
+  }
+}
+
+// Unlock audio on first user interaction
+function unlockAudio() {
+  const ctx = getAudioContext();
+  if (ctx.state === "suspended") ctx.resume();
+  document.removeEventListener("click", unlockAudio);
+  document.removeEventListener("touchstart", unlockAudio);
+  document.removeEventListener("keydown", unlockAudio);
+}
+if (typeof window !== "undefined") {
+  document.addEventListener("click", unlockAudio, { once: true });
+  document.addEventListener("touchstart", unlockAudio, { once: true });
+  document.addEventListener("keydown", unlockAudio, { once: true });
+}
 
 function Chat() {
   const { id } = Route.useParams();
@@ -27,7 +103,14 @@ function Chat() {
   const fileRef = useRef<HTMLInputElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const [photoTimer, setPhotoTimer] = useState<"normal" | "10s" | "15s">("normal");
+  const [maxViews, setMaxViews] = useState<number | null>(null); // null = unlimited, 1 = one-time, etc.
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showAlbumPicker, setShowAlbumPicker] = useState(false);
+  const [albumPhotos, setAlbumPhotos] = useState<{ id: string; path: string; album_id: string | null }[]>([]);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [audioEnabled, setAudioEnabled] = useState(true);
 
+  // Fetch chat info
   const { data: info } = useQuery({
     queryKey: ["chat-info", id],
     enabled: !!uid,
@@ -42,15 +125,47 @@ function Chat() {
       return { pid, peer: p, photo: ph?.[0]?.path };
     },
   });
+
+  // Fetch messages
   const { data: msgs } = useQuery({
     queryKey: ["messages", id],
     enabled: !!info,
     refetchInterval: 2500,
     queryFn: async () => (await supabase.from("messages").select("*").eq("connection_id", id).order("created_at").limit(500)).data ?? [],
   });
+
+  // Fetch user's albums with photos for album picker
+  const { data: myAlbums } = useMyAlbumsWithPhotos();
+
   const purls = useSigned("photos", [info?.photo]);
   const aurls = useSigned("attachments", (msgs ?? []).map((m) => m.attachment_path));
+
+  // Track viewed messages for expiring photos
+  const viewedMsgRef = useRef<Set<string>>(new Set());
+
+  // Scroll to bottom
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs?.length]);
+
+  // Play notification sound on new message
+  const lastMsgCountRef = useRef(msgs?.length ?? 0);
+  useEffect(() => {
+    if (msgs && msgs.length > lastMsgCountRef.current && notificationsEnabled && audioEnabled) {
+      const newMsgs = msgs.slice(lastMsgCountRef.current);
+      const hasNewFromOther = newMsgs.some(m => m.sender !== uid);
+      if (hasNewFromOther) playNotificationSound();
+    }
+    lastMsgCountRef.current = msgs?.length ?? 0;
+  }, [msgs?.length, notificationsEnabled, audioEnabled, uid]);
+
+  // Handle call ringing
+  useEffect(() => {
+    if (call.status === "incoming" && audioEnabled) {
+      playRingingSound();
+    } else {
+      stopRingingSound();
+    }
+    return () => stopRingingSound();
+  }, [call.status, audioEnabled]);
 
   if (info === null) return (
     <div className="p-8 text-center"><p className="text-muted-foreground">This chat isn't available.</p><Button asChild className="mt-4"><Link to="/connections">Back to matches</Link></Button></div>
@@ -61,18 +176,27 @@ function Chat() {
   const now = Date.now();
   const expired = (msgs ?? []).filter((m) => m.expires_at && new Date(m.expires_at).getTime() < now);
 
-  const sendMsg = async (fields: { body?: string; attachment_path?: string; attachment_type?: string; attachment_name?: string }) => {
+  const sendMsg = async (fields: { body?: string; attachment_path?: string; attachment_type?: string; attachment_name?: string; max_views?: number | null }) => {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    const { error } = await supabase.from("messages").insert({ connection_id: id, sender: uid, expires_at: expiresAt, ...fields });
+    const { error } = await supabase.from("messages").insert({ 
+      connection_id: id, 
+      sender: uid, 
+      expires_at: expiresAt, 
+      max_views: fields.max_views ?? null,
+      view_count: 0,
+      ...fields 
+    });
     if (error) toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["messages", id] });
   };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const b = text.trim().slice(0, 4000);
     if (!b) return;
     setText(""); setSending(true); await sendMsg({ body: b }); setSending(false);
   };
+
   const attach = async (f: File | undefined) => {
     if (!f) return;
     if (f.size > 25 * 1024 * 1024) { toast.error("Files must be under 25MB"); return; }
@@ -80,9 +204,42 @@ function Chat() {
     const path = `${id}/${crypto.randomUUID()}-${f.name.replace(/[^\w.-]/g, "_")}`;
     const { error } = await supabase.storage.from("attachments").upload(path, f, { contentType: f.type });
     if (error) toast.error(error.message);
-    else await sendMsg({ attachment_path: path, attachment_type: f.type || "application/octet-stream", attachment_name: f.name });
+    else await sendMsg({ 
+      attachment_path: path, 
+      attachment_type: f.type || "application/octet-stream", 
+      attachment_name: f.name,
+      max_views: maxViews 
+    });
     setSending(false);
     if (fileRef.current) fileRef.current.value = "";
+    setShowAttachMenu(false);
+  };
+
+  const sendAlbumPhoto = async (photoPath: string, photoId: string) => {
+    setSending(true);
+    // Copy photo to attachments bucket for chat
+    const path = `${id}/${crypto.randomUUID()}-${photoId}.jpg`;
+    const { data: { publicUrl } } = supabase.storage.from("photos").getPublicUrl(photoPath);
+    const resp = await fetch(publicUrl);
+    const blob = await resp.blob();
+    const { error } = await supabase.storage.from("attachments").upload(path, blob, { contentType: "image/jpeg" });
+    if (error) { toast.error(error.message); setSending(false); return; }
+    await sendMsg({ 
+      attachment_path: path, 
+      attachment_type: "image/jpeg", 
+      attachment_name: `photo-${photoId}.jpg`,
+      max_views: maxViews 
+    });
+    setSending(false);
+    setShowAlbumPicker(false);
+    setShowAttachMenu(false);
+  };
+
+  const incrementView = async (messageId: string) => {
+    if (viewedMsgRef.current.has(messageId)) return;
+    viewedMsgRef.current.add(messageId);
+    await supabase.rpc("increment_message_view", { message_id: messageId });
+    qc.invalidateQueries({ queryKey: ["messages", id] });
   };
 
   const openExpired = () => setExpNotice(true);
@@ -97,6 +254,12 @@ function Chat() {
         <div className="flex-1 font-semibold">{name}</div>
         <Button size="icon" variant="ghost" onClick={() => call.start(info.pid, name, false)} aria-label="Voice call"><Phone /></Button>
         <Button size="icon" variant="ghost" onClick={() => call.start(info.pid, name, true)} aria-label="Video call"><Video /></Button>
+        <Button size="icon" variant="ghost" onClick={() => setAudioEnabled(!audioEnabled)} aria-label={audioEnabled ? "Mute sounds" : "Enable sounds"}>
+          {audioEnabled ? <VolumeX className="h-4 w-4" /> : <Music className="h-4 w-4" />}
+        </Button>
+        <Button size="icon" variant="ghost" onClick={() => setNotificationsEnabled(!notificationsEnabled)} aria-label={notificationsEnabled ? "Disable notifications" : "Enable notifications"}>
+          {notificationsEnabled ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+        </Button>
       </header>
 
       <Dialog open={expNotice} onOpenChange={setExpNotice}>
@@ -120,18 +283,46 @@ function Chat() {
         {msgs?.map((m) => {
           const mine = m.sender === uid;
           const isExpired = m.expires_at && new Date(m.expires_at).getTime() < now;
+          const isViewLimited = m.max_views !== null && m.max_views !== undefined && m.view_count !== undefined && m.view_count >= m.max_views;
           const url = m.attachment_path ? aurls[m.attachment_path] : undefined;
+          const isImage = m.attachment_type?.startsWith("image/");
+          const isVideo = m.attachment_type?.startsWith("video/");
+          
+          // Trigger view count increment when image comes into view (for recipient)
+          useEffect(() => {
+            if (!mine && isImage && m.max_views && m.max_views > 0 && m.view_count !== undefined && m.view_count < m.max_views && !isExpired) {
+              incrementView(m.id);
+            }
+          }, [m.id, mine, isImage, m.max_views, m.view_count, isExpired]);
+
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${isExpired ? "opacity-40" : ""}`}>
+              <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${isExpired || isViewLimited ? "opacity-40" : ""}`}>
                 {m.attachment_path && (
-                  m.attachment_type?.startsWith("image/") ? (url ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={m.attachment_name ?? "image"} className="mb-1 max-h-64 rounded-xl" /></a> : <div className="h-32 w-48 animate-pulse rounded-xl bg-muted" />)
-                  : m.attachment_type?.startsWith("video/") ? (url && <video src={url} controls className="mb-1 max-h-64 rounded-xl" />)
-                  : <a href={url} target="_blank" rel="noreferrer" className="mb-1 flex items-center gap-2 underline"><FileText className="h-4 w-4" />{m.attachment_name}</a>
+                  <>
+                    {isImage ? (
+                      url ? (
+                        <a href={url} target="_blank" rel="noreferrer" onClick={() => !mine && incrementView(m.id)}>
+                          <img src={url} alt={m.attachment_name ?? "image"} className="mb-1 max-h-64 rounded-xl" />
+                        </a>
+                      ) : <div className="h-32 w-48 animate-pulse rounded-xl bg-muted" />
+                    ) : isVideo ? (
+                      url && <video src={url} controls className="mb-1 max-h-64 rounded-xl" />
+                    ) : (
+                      <a href={url} target="_blank" rel="noreferrer" className="mb-1 flex items-center gap-2 underline">
+                        <FileText className="h-4 w-4" />{m.attachment_name}
+                      </a>
+                    )}
+                    {(m.max_views !== null && m.max_views !== undefined) && (
+                      <div className="text-[10px] text-center opacity-70 mt-1">
+                        {m.max_views === 1 ? "👁 One-time view" : `👁 ${m.view_count ?? 0}/${m.max_views} views`}
+                      </div>
+                    )}
+                  </>
                 )}
                 {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                 <div className="mt-0.5 text-right text-[10px] opacity-70">{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                {isExpired && <div className="text-[10px] text-center opacity-60 mt-1">Expired — deleted after 24h</div>}
+                {(isExpired || isViewLimited) && <div className="text-[10px] text-center opacity-60 mt-1">{isViewLimited ? "View limit reached" : "Expired — deleted after 24h"}</div>}
               </div>
             </div>
           );
@@ -139,10 +330,99 @@ function Chat() {
         <div ref={bottom} />
       </div>
 
+      {/* Attach Menu */}
+      <Dialog open={showAttachMenu} onOpenChange={setShowAttachMenu}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Attach</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 p-4">
+            <Button variant="outline" className="w-full justify-start" onClick={() => fileRef.current?.click()} disabled={sending}>
+              <Paperclip className="h-4 w-4 mr-2" /> Photo / Video from device
+            </Button>
+            <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={(e) => attach(e.target.files?.[0])} />
+            <Separator />
+            <Button variant="outline" className="w-full justify-start" onClick={() => {
+              const allPhotos = myAlbums?.flatMap(a => a.photos.map(p => ({ id: p.id, path: p.path, album_id: a.id }))) ?? [];
+              setAlbumPhotos(allPhotos);
+              setShowAlbumPicker(true);
+              setShowAttachMenu(false);
+            }} disabled={sending || !myAlbums?.some(a => a.photos.length)}>
+              <Image className="h-4 w-4 mr-2" /> Choose from my albums
+            </Button>
+            {myAlbums?.some(a => a.photos.length) && (
+              <p className="text-xs text-muted-foreground text-center">
+                {myAlbums.reduce((sum, a) => sum + a.photos.length, 0)} photos in {myAlbums.length} album{myAlbums.length !== 1 ? "s" : ""}
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Album Picker */}
+      <Dialog open={showAlbumPicker} onOpenChange={setShowAlbumPicker}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Choose from your albums</DialogTitle>
+          </DialogHeader>
+          <div className="p-4">
+            <div className="mb-4 space-y-2">
+              <Label>View limit for this photo</Label>
+              <RadioGroup value={maxViews === null ? "unlimited" : maxViews.toString()} onValueChange={v => setMaxViews(v === "unlimited" ? null : parseInt(v))}>
+                <div className="flex flex-wrap gap-2">
+                  <RadioGroupItem value="unlimited" className="flex items-center gap-1 px-3 py-2 rounded-lg border bg-background"><span>Unlimited</span></RadioGroupItem>
+                  <RadioGroupItem value="1" className="flex items-center gap-1 px-3 py-2 rounded-lg border bg-background"><Eye className="h-3 w-3" /><span>1 view</span></RadioGroupItem>
+                  <RadioGroupItem value="2" className="flex items-center gap-1 px-3 py-2 rounded-lg border bg-background"><span>2 views</span></RadioGroupItem>
+                  <RadioGroupItem value="3" className="flex items-center gap-1 px-3 py-2 rounded-lg border bg-background"><span>3 views</span></RadioGroupItem>
+                </div>
+              </RadioGroup>
+              <p className="text-xs text-muted-foreground">One-time view photos disappear after the recipient opens them once.</p>
+            </div>
+            <ScrollArea className="max-h-[50vh]">
+              <div className="space-y-4">
+                {myAlbums?.map((album) => 
+                  album.photos.length > 0 && (
+                    <div key={album.id} className="space-y-2">
+                      <h4 className="font-medium flex items-center gap-2">
+                        <span className="text-sm">{album.name}</span>
+                        <span className="text-xs text-muted-foreground">({album.photos.length})</span>
+                      </h4>
+                      <div className="grid grid-cols-4 gap-2">
+                        {album.photos.map((p) => (
+                          <Button
+                            key={p.id}
+                            variant="outline"
+                            size="icon"
+                            className="aspect-square p-0"
+                            onClick={() => sendAlbumPhoto(p.path, p.id)}
+                            disabled={sending}
+                          >
+                            {aurls[p.path] ? <img src={aurls[p.path]} alt="" className="h-full w-full object-cover rounded" /> : <div className="h-full w-full animate-pulse rounded bg-muted" />}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                )}
+                {!myAlbums?.some(a => a.photos.length) && (
+                  <p className="text-center text-muted-foreground py-8">No photos in your albums yet. Add some in your Profile.</p>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <form onSubmit={submit} className="flex items-center gap-2 border-t bg-card p-3">
         <div className="flex items-center gap-2">
-          <Button type="button" size="icon" variant="ghost" onClick={() => fileRef.current?.click()} disabled={sending} aria-label="Attach file"><Paperclip /></Button>
-          <input ref={fileRef} type="file" hidden onChange={(e) => attach(e.target.files?.[0])} />
+          <Button type="button" size="icon" variant="ghost" onClick={() => setShowAttachMenu(true)} disabled={sending} aria-label="Attach">
+            <Paperclip className="h-4 w-4" />
+          </Button>
+          {maxViews !== null && (
+            <span className="px-2 py-0.5 text-[10px] rounded bg-accent text-accent-foreground">
+              {maxViews === 1 ? "1️⃣ View" : `${maxViews} views`}
+            </span>
+          )}
           <label className="text-[10px] text-muted-foreground uppercase tracking-wider">{photoTimer}</label>
           <Button size="icon" variant="outline" onClick={() => setPhotoTimer(photoTimer === "normal" ? "10s" : photoTimer === "10s" ? "15s" : "normal")} aria-label="Disappearing photo timer"><Clock className="h-4 w-4" /></Button>
         </div>

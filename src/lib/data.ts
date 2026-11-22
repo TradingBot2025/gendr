@@ -111,6 +111,27 @@ export function usePhotoAlbums() {
   });
 }
 
+export function useMyAlbumsWithPhotos() {
+  const { data: me } = useMe();
+  return useQuery({
+    queryKey: ["my-albums-photos", me?.user.id],
+    enabled: !!me,
+    queryFn: async () => {
+      const [{ data: albums }, { data: photos }] = await Promise.all([
+        supabase.from("photo_albums").select("*").eq("user_id", me!.user.id).order("created_at", { ascending: false }),
+        supabase.from("photos").select("id,path,album_id,is_private,view_timer,position").eq("user_id", me!.user.id).order("position"),
+      ]);
+      const byAlbum: Record<string, typeof photos> = {};
+      (photos ?? []).forEach((p) => {
+        const k = p.album_id ?? "none";
+        if (!byAlbum[k]) byAlbum[k] = [];
+        byAlbum[k].push(p);
+      });
+      return (albums ?? []).map((a) => ({ ...a, photos: byAlbum[a.id] ?? [] }));
+    },
+  });
+}
+
 export function useReports() {
   return useQuery({
     queryKey: ["reports"],
