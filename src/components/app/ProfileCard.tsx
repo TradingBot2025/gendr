@@ -1,14 +1,18 @@
 import { BadgeCheck, MapPin, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ageOf, type Profile } from "@/lib/data";
 
 export function ProfileCard({ p, photo, action, to, toParams }: { p: Profile; photo?: string | undefined; action?: ReactNode; to?: string; toParams?: Record<string, string> }) {
   const age = ageOf(p.birthdate);
+  const navigate = useNavigate();
   
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
     if (to && toParams) {
       console.log("[ProfileCard] Navigating to:", to, "with params:", toParams);
+      // Use TanStack Router's navigate as fallback for any hydration issues
+      e.preventDefault();
+      navigate({ to, params: toParams });
     }
   };
   
@@ -55,7 +59,7 @@ export function ProfileCard({ p, photo, action, to, toParams }: { p: Profile; ph
   }
   
   return (
-    <div className="overflow-hidden rounded-3xl border bg-card shadow-soft" onClick={handleClick}>
+    <div className="overflow-hidden rounded-3xl border bg-card shadow-soft">
       {cardContent}
     </div>
   );

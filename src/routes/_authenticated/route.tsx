@@ -1,14 +1,13 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Compass, Heart, LayoutDashboard, LogOut, Shield, Shuffle, User, MessageCircle, Mail, Settings, Album, Users as UsersIcon } from "lucide-react";
+import { Compass, Heart, LayoutDashboard, LogOut, Shield, Shuffle, User, Album, Users as UsersIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
 import { toast } from "sonner";
 import { CallProvider } from "@/lib/calls";
 import { CallOverlay } from "@/components/app/CallOverlay";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -25,9 +24,6 @@ function Shell() {
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [unread, setUnread] = useState(0);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const signOut = async () => {
@@ -36,12 +32,6 @@ function Shell() {
     await supabase.auth.signOut();
     navigate({ to: "/auth", replace: true });
   };
-
-  const openMessages = useCallback(() => {
-    navigate({ to: "/connections" });
-    setDropdownOpen(false);
-    setNotifOpen(false);
-  }, [navigate]);
 
   useEffect(() => {
     const ch = supabase
@@ -54,10 +44,6 @@ function Shell() {
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [me?.user.id]);
-
-  const toastNewMessage = () => {
-    toast("New message", { action: { label: "Open", onClick: openMessages } });
-  };
 
   if (isLoading || !me) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
 
@@ -112,13 +98,6 @@ function Shell() {
           ) : (
             <Outlet />
           )}
-          {unread > 0 && (
-            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-primary px-3 py-2 shadow-xl animate-in slide-in-from-bottom-2">
-              <MessageCircle className="h-4 w-4 text-primary-foreground" />
-              <span className="text-xs font-medium text-primary-foreground">You have {unread} new message{unread !== 1 ? "s" : ""}</span>
-              <Button size="icon" variant="ghost" className="h-6 w-6 text-primary-foreground" onClick={openMessages}><Mail className="h-4 w-4" /></Button>
-            </div>
-          )}
         </main>
         {!inChat && (
           <nav className="fixed bottom-0 left-0 right-0 z-40 flex justify-around border-t bg-card py-2 md:hidden">
@@ -129,22 +108,6 @@ function Shell() {
             ))}
           </nav>
         )}
-        <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-          <DropdownMenuTrigger asChild ref={dropdownRef}>
-            <Button size="icon" variant="ghost" className="fixed bottom-4 right-4 z-50 h-10 w-10 rounded-full border shadow-lg" aria-label="Notifications">
-              <MessageCircle className="h-5 w-5" />
-              {unread > 0 && <span className="absolute top-0 right-0 h-3 w-3 rounded-full bg-destructive border-2 border-background text-[10px] flex items-center justify-center">{unread}</span>}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuItem onClick={openMessages} className="flex items-center gap-2">
-              <MessageCircle className="h-4 w-4" /> Messages{unread > 0 && <span className="ml-auto text-xs bg-destructive text-destructive-foreground rounded-full px-1.5">{unread}</span>}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { navigate({ to: "/account" }); setDropdownOpen(false); }}><Settings className="h-4 w-4 mr-2" />Account</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut} className="text-destructive"><LogOut className="h-4 w-4 mr-2" />Sign out</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
         <CallOverlay />
       </div>
     </CallProvider>

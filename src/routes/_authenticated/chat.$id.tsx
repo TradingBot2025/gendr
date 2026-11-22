@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PhotoViewer } from "@/components/app/PhotoViewer";
 
 export const Route = createFileRoute("/_authenticated/chat/$id")({
   head: () => ({ meta: [{ title: "Chat — Gender" }, { name: "description", content: "Chat, share and call your match. Messages expire after 24 hours." }] }),
@@ -39,6 +40,9 @@ function Chat() {
   const [albumPhotos, setAlbumPhotos] = useState<{ id: string; path: string; album_id: string | null }[]>([]);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [photoViewerPhotos, setPhotoViewerPhotos] = useState<Array<{ id: string; path: string; attachment_type?: string }> | null>(null);
+  const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
 
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
@@ -303,9 +307,24 @@ function Chat() {
                       <>
                         {isImage ? (
                           url ? (
-                            <a href={url} target="_blank" rel="noreferrer" onClick={() => !mine && incrementView(m.id)}>
+                            <div 
+                              onClick={() => {
+                                !mine && incrementView(m.id);
+                                // Collect all images in chat for PhotoViewer navigation
+                                const imageMsgs = (msgs ?? []).filter((msg) => msg.attachment_type?.startsWith("image/") && msg.attachment_path && aurls[msg.attachment_path]);
+                                setPhotoViewerPhotos(imageMsgs.map((msg) => ({ 
+                                  id: msg.id, 
+                                  path: msg.attachment_path, 
+                                  attachment_type: msg.attachment_type 
+                                })));
+                                const idx = imageMsgs.findIndex((msg) => msg.id === m.id);
+                                setPhotoViewerIndex(idx >= 0 ? idx : 0);
+                                setPhotoViewerOpen(true);
+                              }}
+                              className="cursor-pointer"
+                            >
                               <img src={url} alt={m.attachment_name ?? "image"} className="mb-1 max-h-64 rounded-xl" />
-                            </a>
+                            </div>
                           ) : <div className="h-32 w-48 animate-pulse rounded-xl bg-muted" />
                         ) : isVideo ? (
                           url && <video src={url} controls className="mb-1 max-h-64 rounded-xl" />
@@ -455,6 +474,16 @@ function Chat() {
       <div className="fixed bottom-1 left-1/2 -translate-x-1/2 z-40">
         <Button size="icon" variant="ghost" onClick={openExpired} className="h-8 w-8 rounded-full bg-card border shadow-lg"><ShieldCheck className="h-4 w-4" /></Button>
       </div>
+
+      <PhotoViewer
+        isOpen={photoViewerOpen}
+        onClose={() => setPhotoViewerOpen(false)}
+        photos={photoViewerPhotos ?? []}
+        initialIndex={photoViewerIndex}
+        urls={aurls}
+        currentUserId={uid}
+        isOwner={false}
+      />
     </div>
   );
 }

@@ -35,7 +35,7 @@ function Albums() {
     queryFn: async () => {
       const [{ data: alb }, { data: photos }] = await Promise.all([
         supabase.from("photo_albums").select("*").eq("user_id", me!.user.id).order("created_at", { ascending: false }),
-        supabase.from("photos").select("id,path,album_id,is_private,view_timer,position").order("position"),
+        supabase.from("photos").select("id,path,album_id,is_private,view_timer,position").eq("user_id", me!.user.id).order("position"),
       ]);
       const byAlbum: Record<string, typeof photos> = {};
       (photos ?? []).forEach((p) => {
