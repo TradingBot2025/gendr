@@ -5,9 +5,9 @@ import { ageOf, type Profile } from "@/lib/data";
 
 export function ProfileCard({ p, photo, action, to }: { p: Profile; photo?: string | undefined; action?: ReactNode; to?: string }) {
   const age = ageOf(p.birthdate);
-  const Content = to ? Link : "div";
-  return (
-    <Content to={to} className="overflow-hidden rounded-3xl border bg-card shadow-soft transition-shadow hover:shadow-lg cursor-pointer">
+  
+  const cardContent = (
+    <>
       <div className="relative aspect-[4/5] bg-muted">
         {photo ? (
           <img
@@ -37,6 +37,20 @@ export function ProfileCard({ p, photo, action, to }: { p: Profile; photo?: stri
         {p.bio && <p className="line-clamp-2 text-sm text-muted-foreground">{p.bio}</p>}
         {action}
       </div>
-    </Content>
+    </>
+  );
+
+  if (to) {
+    return (
+      <Link to={to} className="overflow-hidden rounded-3xl border bg-card shadow-soft transition-shadow hover:shadow-lg cursor-pointer">
+        {cardContent}
+      </Link>
+    );
+  }
+  
+  return (
+    <div className="overflow-hidden rounded-3xl border bg-card shadow-soft">
+      {cardContent}
+    </div>
   );
 }
