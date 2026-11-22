@@ -154,7 +154,8 @@ function Dashboard() {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {data.people.map((pp) => {
               const ph = data.first[pp.id];
-              return <ProfileCard key={pp.id} p={pp} photo={ph ? urls[ph] : undefined} action={<Button asChild variant="outline" className="w-full"><Link to="/discover">View in Discover</Link></Button>} to="/profile/$username" toParams={{ username: pp.username ?? pp.id }} />;
+              const profileUsername = pp.username && pp.username.trim() !== "" ? pp.username : pp.id;
+              return <ProfileCard key={pp.id} p={pp} photo={ph ? urls[ph] : undefined} action={<Button asChild variant="outline" className="w-full"><Link to="/discover">View in Discover</Link></Button>} to="/profile/$username" toParams={{ username: profileUsername }} />;
             })}
           </div>
         ) : <p className="text-muted-foreground">No one else has joined yet — invite your friends!</p>}

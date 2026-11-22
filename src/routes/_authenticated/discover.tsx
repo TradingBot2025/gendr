@@ -142,7 +142,9 @@ function Discover() {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {list.map((p) => {
               const path = data?.firstPhoto[p.id];
-              return <ProfileCard key={p.id} p={p} photo={path ? urls[path] : undefined} action={actionFor(p.id)} to="/profile/$username" toParams={{ username: p.username ?? p.id }} />;
+              // Use username if available, otherwise fall back to ID
+              const profileUsername = p.username && p.username.trim() !== "" ? p.username : p.id;
+              return <ProfileCard key={p.id} p={p} photo={path ? urls[path] : undefined} action={actionFor(p.id)} to="/profile/$username" toParams={{ username: profileUsername }} />;
             })}
           </div>
         )
@@ -160,13 +162,14 @@ function Discover() {
                 const existing = data?.conns.find((c) => (c.requester === p.id || c.addressee === p.id));
                 const already = existing?.status === "accepted";
                 const connId = existing?.id;
+                const profileUsername = p.username && p.username.trim() !== "" ? p.username : p.id;
                 return (
                   <ProfileCard
                     key={v.id}
                     p={p}
                     photo={path ? urls[path] : undefined}
                     to="/profile/$username"
-                    toParams={{ username: p.username ?? p.id }}
+                    toParams={{ username: profileUsername }}
                     action={
                       <div className="flex gap-2">
                         {already ? <Button asChild variant="success" className="flex-1"><Link to={`/chat/${connId}`}>Chat</Link></Button> : <Button variant="hero" className="flex-1" onClick={() => connect(p.id)}>Connect</Button>}

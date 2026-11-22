@@ -55,7 +55,10 @@ function Connections() {
   const grid = (items: typeof all, action: (d: (typeof all)[number]) => ReactNode, empty: string) =>
     items.length ? (
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((d) => <ProfileCard key={d.c.id} p={d.p} photo={d.photo ? urls[d.photo] : undefined} action={action(d)} to="/profile/$username" toParams={{ username: d.p.username ?? d.p.id }} />)}
+        {items.map((d) => {
+          const profileUsername = d.p.username && d.p.username.trim() !== "" ? d.p.username : d.p.id;
+          return <ProfileCard key={d.c.id} p={d.p} photo={d.photo ? urls[d.photo] : undefined} action={action(d)} to="/profile/$username" toParams={{ username: profileUsername }} />;
+        })}
       </div>
     ) : <p className="py-16 text-center text-muted-foreground">{empty}</p>;
 
