@@ -30,14 +30,33 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 CREATE INDEX IF NOT EXISTS profiles_username_idx ON public.profiles(username);
 
+-- 2a. Add new columns to existing profiles table (run separately in Supabase if needed)
+-- These are idempotent and safe to run multiple times
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS username text UNIQUE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_online boolean NOT NULL DEFAULT false;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_seen_at timestamptz;
+
 -- 2b. Generate usernames for existing users who don't have one
+-- This DO block checks if username column exists before running
 DO $$
 DECLARE
   rec RECORD;
   base_username text;
   final_username text;
   counter int;
+  col_exists boolean;
 BEGIN
+  -- Check if username column exists
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'username'
+  ) INTO col_exists;
+  
+  IF NOT col_exists THEN
+    RAISE NOTICE 'username column does not exist yet, skipping username generation';
+    RETURN;
+  END IF;
+  
   FOR rec IN SELECT id, display_name, email FROM public.profiles WHERE username IS NULL LOOP
     base_username := COALESCE(rec.display_name, SPLIT_PART(rec.email, '@', 1));
     base_username := lower(regexp_replace(base_username, '[^a-z0-9_]', '', 'g'));
@@ -421,6 +440,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'reports') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.reports;
   END IF;
+END $$;
 
 -- 25. Trigger to auto-update last_seen_at on profile update
 CREATE OR REPLACE FUNCTION public.update_last_seen_at()
@@ -435,5 +455,3 @@ CREATE TRIGGER trigger_update_last_seen_at
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW
   EXECUTE FUNCTION public.update_last_seen_at();
-
-END $$;
