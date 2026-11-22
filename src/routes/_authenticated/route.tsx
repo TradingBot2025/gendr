@@ -102,7 +102,7 @@ function Shell() {
           </nav>
           <Button variant="ghost" className="justify-start" onClick={signOut}><LogOut />Sign out</Button>
         </aside>
-        <main className={`flex-1 ${inChat ? "" : "pb-20 md:pb-0}"} ref={notifRef}>
+        <main className={`flex-1 ${inChat ? "" : "pb-20 md:pb-0"}`} ref={notifRef}>
           {gated ? (
             <div className="mx-auto mt-24 max-w-md rounded-3xl border bg-card p-8 text-center shadow-soft">
               <h2 className="text-2xl font-bold">Finish your profile</h2>

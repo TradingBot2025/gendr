@@ -110,7 +110,7 @@ function Albums() {
                   </div>
                 ))}
               </div>
-              <Button size="sm" variant="destructive" disabled={deletingId === id} onClick={() => remove(a.id)} className="mt-3 w-full">{deletingId === id ? "Deleting…" : "Delete album"}</Button>
+              <Button size="sm" variant="destructive" disabled={deletingId === a.id} onClick={() => remove(a.id)} className="mt-3 w-full">{deletingId === a.id ? "Deleting…" : "Delete album"}</Button>
             </div>
           ))}
         </div>
