@@ -22,29 +22,34 @@ function Admin() {
   const { data: me } = useMe();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState<"members" | "reports" | "actions">("members");
+  const [tab, setTab] = useState<"members" | "reports" | "actions" | "connections">("members");
   const [delOpen, setDelOpen] = useState(false);
   const [delTarget, setDelTarget] = useState<{ id: string; name: string } | null>(null);
   const [delPwd, setDelPwd] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<{ id: string; name: string; status: string } | null>(null);
 
   const { data } = useQuery({
     queryKey: ["admin-users"],
     enabled: !!me?.isAdmin,
     queryFn: async () => {
-      const [{ data: profiles }, { data: photos }, { count }] = await Promise.all([
+      const [{ data: profiles }, { data: photos }, { data: conns }, { count }] = await Promise.all([
         supabase.from("profiles").select("*").order("created_at", { ascending: false }).limit(1000),
         supabase.from("photos").select("user_id,path,position").order("position"),
+        supabase.from("connections").select("*").order("created_at", { ascending: false }),
         supabase.from("connections").select("id", { count: "exact", head: true }).eq("status", "accepted"),
       ]);
       const first: Record<string, string> = {};
       photos?.forEach((p) => { if (!first[p.user_id]) first[p.user_id] = p.path; });
-      return { profiles: profiles ?? [], first, matches: count ?? 0 };
+      return { profiles: profiles ?? [], conns: conns ?? [], first, matches: count ?? 0 };
     },
   });
   const reports = useReports();
   const actions = useAdminActions();
   const list = useMemo(() => (data?.profiles ?? []).filter((p) => `${p.display_name} ${p.city} ${p.country} ${p.gender}`.toLowerCase().includes(q.toLowerCase())), [data, q]);
   const urls = useSigned("photos", list.map((p) => data?.first[p.id]));
+  const declined = (data?.conns ?? []).filter((c) => c.status === "declined");
+  const pending = (data?.conns ?? []).filter((c) => c.status === "pending");
 
   if (!me?.isAdmin) return <div className="p-8 text-center"><p className="text-muted-foreground">Admins only.</p><Button asChild className="mt-4"><Link to="/dashboard">Go to dashboard</Link></Button></div>;
 
@@ -67,11 +72,23 @@ function Admin() {
     finally { setDelOpen(false); setDelPwd(""); }
   };
 
+  const resetConnection = async () => {
+    if (!resetTarget) return;
+    try {
+      const { error } = await supabase.from("connections").update({ status: "pending" }).eq("id", resetTarget.id);
+      if (error) throw error;
+      await adminRecordAction(resetTarget.id, "unban", `reset declined connection`);
+      toast.success("Connection reset — user can send a new request");
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+    } catch (err: any) { toast.error(err.message ?? "Reset failed"); }
+    finally { setResetOpen(false); setResetTarget(null); }
+  };
+
   const all = data?.profiles ?? [];
   const stats = [
     { l: "Members", v: all.length }, { l: "Verified", v: all.filter((p) => p.verified).length },
     { l: "Suspended", v: all.filter((p) => p.banned).length }, { l: "Reports", v: reports.data?.filter((r) => r.status === "open").length ?? 0 },
-    { l: "Matches", v: data?.matches ?? 0 },
+    { l: "Declined requests", v: declined.length }, { l: "Matches", v: data?.matches ?? 0 },
   ];
 
   return (
@@ -84,6 +101,7 @@ function Admin() {
       <Tabs defaultValue={tab} onValueChange={setTab}>
         <TabsList className="mb-6">
           <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsTrigger value="connections">Connections ({declined.length} declined)</TabsTrigger>
           <TabsTrigger value="reports">Reports ({reports.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="actions">Admin actions</TabsTrigger>
         </TabsList>
@@ -124,6 +142,43 @@ function Admin() {
               </TableBody>
             </Table>
           </div>
+        </TabsContent>
+
+        <TabsContent value="connections">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Connection requests</h2>
+            <p className="text-sm text-muted-foreground">Reset declined connections so the users can send a new request.</p>
+          </div>
+          <div className="space-y-2 mb-4">
+            <div className="flex gap-2"><span className="text-xs font-medium text-muted-foreground">Pending:</span> <span className="font-medium">{pending.length}</span></div>
+            <div className="flex gap-2"><span className="text-xs font-medium text-muted-foreground">Declined:</span> <span className="font-medium text-destructive">{declined.length}</span></div>
+          </div>
+          {declined.length === 0 ? (
+            <p className="text-muted-foreground">No declined connections.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-3xl border bg-card">
+              <Table>
+                <TableHeader><TableRow><TableHead>From</TableHead><TableHead>To</TableHead><TableHead>Status</TableHead><TableHead>When</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {declined.map((c) => {
+                    const fromProf = all.find((p) => p.id === c.requester);
+                    const toProf = all.find((p) => p.id === c.addressee);
+                    return (
+                      <TableRow key={c.id}>
+                        <TableCell>{fromProf?.display_name ?? "—"}</TableCell>
+                        <TableCell>{toProf?.display_name ?? "—"}</TableCell>
+                        <TableCell><span className="px-2 py-0.5 rounded text-xs bg-destructive/10 text-destructive">{c.status}</span></TableCell>
+                        <TableCell className="text-xs">{new Date(c.created_at).toLocaleString()}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => { setResetTarget({ id: c.id, name: fromProf?.display_name ?? "user", status: c.status }); setResetOpen(true); }}>Reset</Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="reports">
@@ -192,6 +247,19 @@ function Admin() {
               <div className="space-y-1.5"><Label>Admin password</Label><Input type="password" value={delPwd} onChange={(e) => setDelPwd(e.value)} required /></div>
               <AlertDialogAction variant="destructive" type="submit" disabled={!delPwd}>Delete account</AlertDialogAction>
             </form>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset declined connection</AlertDialogTitle>
+            <AlertDialogDescription>Reset the declined request from {resetTarget?.name} so they can send a new connection request.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" type="submit" onClick={resetConnection}>Reset connection</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { ageOf, GENDERS, ORIENTATIONS, useMe, useSigned, logProfileView, useProfileViews, type Profile } from "@/lib/data";
 import { ProfileCard } from "@/components/app/ProfileCard";
+import { AdBanner } from "@/components/app/AdBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -185,6 +186,7 @@ function Discover() {
           )}
         </div>
       )}
+      <AdBanner position="bottom" />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { deleteAccount } from "@/lib/delete-account.functions";
@@ -58,6 +58,7 @@ function Account() {
         </p>
         <div className="flex gap-3">
           <Button variant="outline" onClick={() => setPolicyOpen(true)} className="flex-1"><FileText className="h-4 w-4 mr-2" />Privacy policy</Button>
+          <Button asChild variant="outline" className="flex-1"><Link to="/terms"><FileText className="h-4 w-4 mr-2" />Terms &amp; conditions</Link></Button>
           <Button variant="outline" onClick={() => setDeleteOpen(true)} className="flex-1"><Trash2 className="h-4 w-4 mr-2" />Delete account</Button>
         </div>
       </section>

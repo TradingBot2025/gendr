@@ -114,7 +114,6 @@ export function usePhotoAlbums() {
 export function useReports() {
   return useQuery({
     queryKey: ["reports"],
-    enabled: false,
     queryFn: async () => {
       const { data } = await supabase.from("reports").select("*, reporter:profiles!reports_reporter_id_fkey(display_name), reported:profiles!reports_reported_id_fkey(display_name)").order("created_at", { ascending: false });
       return data ?? [];
@@ -125,7 +124,6 @@ export function useReports() {
 export function useAdminActions() {
   return useQuery({
     queryKey: ["admin-actions"],
-    enabled: false,
     queryFn: async () => {
       const { data } = await supabase.from("admin_actions").select("*, admin:profiles!admin_actions_admin_id_fkey(display_name), target:profiles!admin_actions_target_id_fkey(display_name)").order("created_at", { ascending: false });
       return data ?? [];
