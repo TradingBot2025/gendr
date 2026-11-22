@@ -25,6 +25,7 @@ function Random() {
 
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContext) return;
     function unlockAudio() {

@@ -19,17 +19,17 @@ export const Route = createFileRoute("/_authenticated/chat/$id")({
   component: Chat,
 });
 
-// Notification sound
-// Audio context for mobile unlock
+// Audio context helpers (only run in browser)
 let audioContext: AudioContext | null = null;
 function getAudioContext() {
+  if (typeof window === "undefined") return null as any;
   if (!audioContext) audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
   return audioContext;
 }
 
-// Generate simple beep sounds programmatically (works better on mobile)
 function createBeep(frequency: number, duration: number, volume = 0.3) {
   const ctx = getAudioContext();
+  if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume();
   const oscillator = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -50,6 +50,7 @@ function playNotificationSound() {
 
 function playRingingSound() {
   const ctx = getAudioContext();
+  if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume();
   const oscillator = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -59,22 +60,16 @@ function playRingingSound() {
   oscillator.type = "sine";
   gain.gain.value = 0.3;
   oscillator.start();
-  // Store for stopping
   (window as any).__ringingOscillator = oscillator;
   (window as any).__ringingGain = gain;
 }
 
 function stopRingingSound() {
+  if (typeof window === "undefined") return;
   const osc = (window as any).__ringingOscillator;
   const gain = (window as any).__ringingGain;
-  if (osc) {
-    try { osc.stop(); osc.disconnect(); } catch {}
-    (window as any).__ringingOscillator = null;
-  }
-  if (gain) {
-    try { gain.disconnect(); } catch {}
-    (window as any).__ringingGain = null;
-  }
+  if (osc) { try { osc.stop(); osc.disconnect(); } catch {} (window as any).__ringingOscillator = null; }
+  if (gain) { try { gain.disconnect(); } catch {} (window as any).__ringingGain = null; }
 }
 
 function Chat() {
