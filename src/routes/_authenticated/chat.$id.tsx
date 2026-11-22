@@ -287,13 +287,6 @@ function Chat() {
           const url = m.attachment_path ? aurls[m.attachment_path] : undefined;
           const isImage = m.attachment_type?.startsWith("image/");
           const isVideo = m.attachment_type?.startsWith("video/");
-          
-          // Trigger view count increment when image comes into view (for recipient)
-          useEffect(() => {
-            if (!mine && isImage && m.max_views && m.max_views > 0 && m.view_count !== undefined && m.view_count < m.max_views && !isExpired) {
-              incrementView(m.id);
-            }
-          }, [m.id, mine, isImage, m.max_views, m.view_count, isExpired]);
 
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
