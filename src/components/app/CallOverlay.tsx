@@ -2,38 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCall } from "@/lib/calls";
-
-// Audio context for mobile unlock (shared with chat)
-let audioContext: AudioContext | null = null;
-function getAudioContext() {
-  if (typeof window === "undefined") return null as any;
-  if (!audioContext) audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-  return audioContext;
-}
-
-function playRingingSound() {
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  if (ctx.state === "suspended") ctx.resume();
-  const oscillator = ctx.createOscillator();
-  const gain = ctx.createGain();
-  oscillator.connect(gain);
-  gain.connect(ctx.destination);
-  oscillator.frequency.value = 440;
-  oscillator.type = "sine";
-  gain.gain.value = 0.3;
-  oscillator.start();
-  (window as any).__callRingingOscillator = oscillator;
-  (window as any).__callRingingGain = gain;
-}
-
-function stopRingingSound() {
-  if (typeof window === "undefined") return;
-  const osc = (window as any).__callRingingOscillator;
-  const gain = (window as any).__callRingingGain;
-  if (osc) { try { osc.stop(); osc.disconnect(); } catch {} (window as any).__callRingingOscillator = null; }
-  if (gain) { try { gain.disconnect(); } catch {} (window as any).__callRingingGain = null; }
-}
+import { playRingingSound, stopRingingSound, unlockAudioContext } from "@/lib/audio";
 
 export function MediaView({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className?: string }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -69,8 +38,7 @@ export function CallOverlay() {
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
     function unlockAudio() {
-      const ctx = getAudioContext();
-      if (ctx?.state === "suspended") ctx.resume();
+      unlockAudioContext();
     }
     document.addEventListener("click", unlockAudio, { once: true });
     document.addEventListener("touchstart", unlockAudio, { once: true });

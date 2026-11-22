@@ -6,6 +6,7 @@ import { ArrowLeft, FileText, Paperclip, Phone, Send, Video, ShieldCheck, Clock,
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos } from "@/lib/data";
 import { useCall } from "@/lib/calls";
+import { playNotificationSound, playRingingSound, stopRingingSound, unlockAudioContext } from "@/lib/audio";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -18,59 +19,6 @@ export const Route = createFileRoute("/_authenticated/chat/$id")({
   head: () => ({ meta: [{ title: "Chat — Gender" }, { name: "description", content: "Chat, share and call your match. Messages expire after 24 hours." }] }),
   component: Chat,
 });
-
-// Audio context helpers (only run in browser)
-let audioContext: AudioContext | null = null;
-function getAudioContext() {
-  if (typeof window === "undefined") return null as any;
-  if (!audioContext) audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-  return audioContext;
-}
-
-function createBeep(frequency: number, duration: number, volume = 0.3) {
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  if (ctx.state === "suspended") ctx.resume();
-  const oscillator = ctx.createOscillator();
-  const gain = ctx.createGain();
-  oscillator.connect(gain);
-  gain.connect(ctx.destination);
-  oscillator.frequency.value = frequency;
-  oscillator.type = "sine";
-  gain.gain.setValueAtTime(volume, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
-  oscillator.start(ctx.currentTime);
-  oscillator.stop(ctx.currentTime + duration);
-}
-
-function playNotificationSound() {
-  createBeep(800, 0.15, 0.4);
-  setTimeout(() => createBeep(600, 0.15, 0.3), 100);
-}
-
-function playRingingSound() {
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  if (ctx.state === "suspended") ctx.resume();
-  const oscillator = ctx.createOscillator();
-  const gain = ctx.createGain();
-  oscillator.connect(gain);
-  gain.connect(ctx.destination);
-  oscillator.frequency.value = 440;
-  oscillator.type = "sine";
-  gain.gain.value = 0.3;
-  oscillator.start();
-  (window as any).__ringingOscillator = oscillator;
-  (window as any).__ringingGain = gain;
-}
-
-function stopRingingSound() {
-  if (typeof window === "undefined") return;
-  const osc = (window as any).__ringingOscillator;
-  const gain = (window as any).__ringingGain;
-  if (osc) { try { osc.stop(); osc.disconnect(); } catch {} (window as any).__ringingOscillator = null; }
-  if (gain) { try { gain.disconnect(); } catch {} (window as any).__ringingGain = null; }
-}
 
 function Chat() {
   const { id } = Route.useParams();
@@ -94,8 +42,7 @@ function Chat() {
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
     function unlockAudio() {
-      const ctx = getAudioContext();
-      if (ctx.state === "suspended") ctx.resume();
+      unlockAudioContext();
     }
     document.addEventListener("click", unlockAudio, { once: true });
     document.addEventListener("touchstart", unlockAudio, { once: true });

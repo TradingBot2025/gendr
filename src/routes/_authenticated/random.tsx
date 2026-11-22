@@ -7,6 +7,7 @@ import { useMe } from "@/lib/data";
 import { useCall } from "@/lib/calls";
 import { MediaView } from "@/components/app/CallOverlay";
 import { Button } from "@/components/ui/button";
+import { unlockAudioContext } from "@/lib/audio";
 
 export const Route = createFileRoute("/_authenticated/random")({
   head: () => ({ meta: [{ title: "Random video — Gender" }, { name: "description", content: "Meet someone new on a random video call." }] }),
@@ -25,12 +26,8 @@ function Random() {
 
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContext) return;
     function unlockAudio() {
-      const ctx = new AudioContext();
-      if (ctx.state === "suspended") ctx.resume();
+      unlockAudioContext();
     }
     document.addEventListener("click", unlockAudio, { once: true });
     document.addEventListener("touchstart", unlockAudio, { once: true });
