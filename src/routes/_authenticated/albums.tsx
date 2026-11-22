@@ -91,7 +91,9 @@ function Albums() {
   };
 
   const handleDragStart = (e: React.DragEvent, photoId: string, albumId: string | null) => {
-    setDraggedPhoto({ id: photoId, albumId });
+    // Store albumId as string: "none" for main photos, UUID for albums
+    const albumIdStr = albumId ?? "none";
+    setDraggedPhoto({ id: photoId, albumId: albumIdStr });
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", photoId);
   };
@@ -114,14 +116,15 @@ function Albums() {
   const handleDrop = async (e: React.DragEvent, targetAlbumId: string) => {
     e.preventDefault();
     if (!draggedPhoto) return;
-    const targetId = targetAlbumId === "none" ? null : targetAlbumId;
-    if (draggedPhoto.albumId === targetId) {
+    // Both are strings: "none" or UUID
+    if (draggedPhoto.albumId === targetAlbumId) {
       setDraggedPhoto(null);
       setDragOverAlbum(null);
       return;
     }
+    const targetId = targetAlbumId === "none" ? null : targetAlbumId;
     const { error } = await supabase.from("photos").update({ album_id: targetId }).eq("id", draggedPhoto.id);
-    if (error) { toast.error(error.message); }
+    if (error) { toast.error(error.message); console.error("Move error:", error); }
     else { toast.success("Photo moved"); qc.invalidateQueries({ queryKey: ["albums"] }); }
     setDraggedPhoto(null);
     setDragOverAlbum(null);

@@ -211,10 +211,11 @@ function Chat() {
 
   const sendAlbumPhoto = async (photoPath: string, photoId: string) => {
     setSending(true);
-    // Copy photo to attachments bucket for chat
+    // Copy photo to attachments bucket for chat using signed URL
     const path = `${id}/${crypto.randomUUID()}-${photoId}.jpg`;
-    const { data: { publicUrl } } = supabase.storage.from("photos").getPublicUrl(photoPath);
-    const resp = await fetch(publicUrl);
+    const { data: signedUrlData, error: signError } = await supabase.storage.from("photos").createSignedUrl(photoPath, 60);
+    if (signError || !signedUrlData?.signedUrl) { toast.error("Failed to get photo URL"); setSending(false); return; }
+    const resp = await fetch(signedUrlData.signedUrl);
     const blob = await resp.blob();
     const { error } = await supabase.storage.from("attachments").upload(path, blob, { contentType: "image/jpeg" });
     if (error) { toast.error(error.message); setSending(false); return; }

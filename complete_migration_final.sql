@@ -344,7 +344,14 @@ ALTER TABLE public.ads_placements ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "ads readable" ON public.ads_placements;
 CREATE POLICY "ads readable" ON public.ads_placements FOR SELECT TO authenticated USING (true);
 
--- 23. Storage policies
+-- 23. Create storage buckets (run once)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES 
+  ('photos', 'photos', false, 26214400, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+  ('attachments', 'attachments', false, 26214400, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'application/pdf'])
+ON CONFLICT (id) DO NOTHING;
+
+-- 24. Storage policies
 DROP POLICY IF EXISTS "photos read" ON storage.objects;
 CREATE POLICY "photos read" ON storage.objects FOR SELECT TO authenticated
 USING (bucket_id = 'photos' AND ((storage.foldername(name))[1] = auth.uid()::text OR public.has_role((SELECT auth.uid()), 'admin') OR EXISTS (SELECT 1 FROM public.photos ph JOIN public.connections c ON c.status = 'accepted' AND ((c.requester = ph.user_id AND c.addressee = auth.uid()) OR (c.addressee = ph.user_id AND c.requester = auth.uid())) WHERE ph.path = storage.objects.name)));
