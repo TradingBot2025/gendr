@@ -202,6 +202,7 @@ ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS expires_at timestamptz;
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS view_count int NOT NULL DEFAULT 0;
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS max_views int;
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS attachment_viewed_at timestamptz;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS unsent boolean NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS messages_expires_at_idx ON public.messages(expires_at) WHERE expires_at IS NOT NULL;
 UPDATE public.messages SET expires_at = created_at + INTERVAL '24 hours' WHERE expires_at IS NULL;
 

@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, FileText, Paperclip, Phone, Send, Video, ShieldCheck, Clock, Image, Eye, EyeOff, Music, VolumeX, Mic, MicOff, Camera } from "lucide-react";
+import { ArrowLeft, FileText, Paperclip, Phone, Send, Video, ShieldCheck, Clock, Image, Eye, EyeOff, Music, VolumeX, Mic, MicOff, Camera, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos } from "@/lib/data";
 import { useCall } from "@/lib/calls";
@@ -142,6 +142,20 @@ function Chat() {
   const now = Date.now();
   const expired = (msgs ?? []).filter((m) => m.expires_at && new Date(m.expires_at).getTime() < now);
 
+  // Check if message is a short-timer message (10s/15s) that should disappear immediately when expired
+  const isShortTimer = (m: any) => m.expires_at && (new Date(m.expires_at).getTime() - new Date(m.created_at).getTime() < 60 * 1000);
+  
+  // Message is expired AND should be hidden (short timer) OR view limited
+  const isExpiredAndHidden = (m: any) => {
+    if (!m.expires_at) return false;
+    const isExpired = new Date(m.expires_at).getTime() < now;
+    if (!isExpired) return false;
+    // Short timer messages (10s/15s) should disappear immediately
+    if (isShortTimer(m)) return true;
+    // 24h messages should show as expired but not blur/hide
+    return false;
+  };
+
   const sendMsg = async (fields: { body?: string; attachment_path?: string; attachment_type?: string; attachment_name?: string; max_views?: number | null }) => {
     let expiresAt: string;
     if (photoTimer === "10s") {
@@ -160,6 +174,13 @@ function Chat() {
       ...fields 
     });
     if (error) toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["messages", id] });
+  };
+
+  const unsendMessage = async (messageId: string) => {
+    const { error } = await supabase.from("messages").update({ unsent: true, body: null, attachment_path: null, attachment_type: null, attachment_name: null }).eq("id", messageId);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Message unsent");
     qc.invalidateQueries({ queryKey: ["messages", id] });
   };
 
@@ -256,39 +277,62 @@ function Chat() {
         {msgs?.map((m) => {
           const mine = m.sender === uid;
           const isExpired = m.expires_at && new Date(m.expires_at).getTime() < now;
+          const isShortTimer = m.expires_at && (new Date(m.expires_at).getTime() - new Date(m.created_at).getTime() < 60 * 1000);
+          const isExpiredAndHidden = isExpired && isShortTimer;
           const isViewLimited = m.max_views !== null && m.max_views !== undefined && m.view_count !== undefined && m.view_count >= m.max_views;
+          const isUnsent = m.unsent === true;
           const url = m.attachment_path ? aurls[m.attachment_path] : undefined;
           const isImage = m.attachment_type?.startsWith("image/");
           const isVideo = m.attachment_type?.startsWith("video/");
 
+          // Don't render short-timer expired messages at all
+          if (isExpiredAndHidden) return null;
+
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${isExpired || isViewLimited ? "opacity-40" : ""}`}>
-                {m.attachment_path && (
+              <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${(isExpired && !isShortTimer) || isViewLimited ? "opacity-40" : ""} ${isUnsent ? "bg-muted" : ""}`}>
+                {isUnsent ? (
+                  <div className="flex items-center gap-2 text-xs opacity-60">
+                    <RotateCcw className="h-3 w-3" />
+                    <span>Message unsent</span>
+                  </div>
+                ) : (
                   <>
-                    {isImage ? (
-                      url ? (
-                        <a href={url} target="_blank" rel="noreferrer" onClick={() => !mine && incrementView(m.id)}>
-                          <img src={url} alt={m.attachment_name ?? "image"} className="mb-1 max-h-64 rounded-xl" />
-                        </a>
-                      ) : <div className="h-32 w-48 animate-pulse rounded-xl bg-muted" />
-                    ) : isVideo ? (
-                      url && <video src={url} controls className="mb-1 max-h-64 rounded-xl" />
-                    ) : (
-                      <a href={url} target="_blank" rel="noreferrer" className="mb-1 flex items-center gap-2 underline">
-                        <FileText className="h-4 w-4" />{m.attachment_name}
-                      </a>
+                    {m.attachment_path && (
+                      <>
+                        {isImage ? (
+                          url ? (
+                            <a href={url} target="_blank" rel="noreferrer" onClick={() => !mine && incrementView(m.id)}>
+                              <img src={url} alt={m.attachment_name ?? "image"} className="mb-1 max-h-64 rounded-xl" />
+                            </a>
+                          ) : <div className="h-32 w-48 animate-pulse rounded-xl bg-muted" />
+                        ) : isVideo ? (
+                          url && <video src={url} controls className="mb-1 max-h-64 rounded-xl" />
+                        ) : (
+                          <a href={url} target="_blank" rel="noreferrer" className="mb-1 flex items-center gap-2 underline">
+                            <FileText className="h-4 w-4" />{m.attachment_name}
+                          </a>
+                        )}
+                        {(m.max_views !== null && m.max_views !== undefined) && (
+                          <div className="text-[10px] text-center opacity-70 mt-1">
+                            {m.max_views === 1 ? "👁 One-time view" : `👁 ${m.view_count ?? 0}/${m.max_views} views`}
+                          </div>
+                        )}
+                      </>
                     )}
-                    {(m.max_views !== null && m.max_views !== undefined) && (
-                      <div className="text-[10px] text-center opacity-70 mt-1">
-                        {m.max_views === 1 ? "👁 One-time view" : `👁 ${m.view_count ?? 0}/${m.max_views} views`}
-                      </div>
-                    )}
+                    {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                    <div className="mt-0.5 flex items-center justify-between">
+                      <span className="text-[10px] opacity-70">{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                      {mine && !isUnsent && (
+                        <Button variant="ghost" size="icon" className="text-[10px] opacity-50 hover:opacity-100" onClick={() => unsendMessage(m.id)} title="Unsend">
+                          <RotateCcw className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                    {(isExpired && !isShortTimer) && <div className="text-[10px] text-center opacity-60 mt-1">Expired — deleted after 24h</div>}
+                    {isViewLimited && <div className="text-[10px] text-center opacity-60 mt-1">View limit reached</div>}
                   </>
                 )}
-                {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
-                <div className="mt-0.5 text-right text-[10px] opacity-70">{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                {(isExpired || isViewLimited) && <div className="text-[10px] text-center opacity-60 mt-1">{isViewLimited ? "View limit reached" : "Expired — deleted after 24h"}</div>}
               </div>
             </div>
           );

@@ -26,6 +26,8 @@ function Albums() {
   const [movePhotoId, setMovePhotoId] = useState<string | null>(null);
   const [moveAlbumId, setMoveAlbumId] = useState<string | null>(null);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [draggedPhoto, setDraggedPhoto] = useState<{ id: string; albumId: string | null } | null>(null);
+  const [dragOverAlbum, setDragOverAlbum] = useState<string | null>(null);
 
   const { data: albumsData } = useQuery({
     queryKey: ["albums", me?.user.id],
@@ -88,6 +90,43 @@ function Albums() {
     qc.invalidateQueries({ queryKey: ["albums"] });
   };
 
+  const handleDragStart = (e: React.DragEvent, photoId: string, albumId: string | null) => {
+    setDraggedPhoto({ id: photoId, albumId });
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", photoId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedPhoto(null);
+    setDragOverAlbum(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, albumId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverAlbum(albumId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverAlbum(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetAlbumId: string) => {
+    e.preventDefault();
+    if (!draggedPhoto) return;
+    const targetId = targetAlbumId === "none" ? null : targetAlbumId;
+    if (draggedPhoto.albumId === targetId) {
+      setDraggedPhoto(null);
+      setDragOverAlbum(null);
+      return;
+    }
+    const { error } = await supabase.from("photos").update({ album_id: targetId }).eq("id", draggedPhoto.id);
+    if (error) { toast.error(error.message); }
+    else { toast.success("Photo moved"); qc.invalidateQueries({ queryKey: ["albums"] }); }
+    setDraggedPhoto(null);
+    setDragOverAlbum(null);
+  };
+
   if (!me) return null;
 
   return (
@@ -108,34 +147,50 @@ function Albums() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {albumsData?.map((a) => (
-            <div key={a.id} className="rounded-3xl border bg-card p-5 shadow-soft">
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-semibold">{a.name}</span>
-                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${a.is_private ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"}`}>
-                  <Lock className="h-3 w-3" /> {a.is_private ? "Private" : "Public"}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mb-3">{a.photos.length} photo{a.photos.length !== 1 ? "s" : ""}</p>
-              <div className="grid gap-2">
-                {a.photos.map((p) => (
-                  <div key={p.id} className="relative aspect-square overflow-hidden rounded-xl bg-muted">
-                    {urls[p.path] ? <img src={urls[p.path]} alt="" className="h-full w-full object-cover" /> : <div className="h-full flex items-center justify-center text-muted-foreground">?</div>}
-                    <div className="absolute top-2 right-2 flex gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => setTimer(p.id, "normal")} title="Normal"><span className="text-[10px]">∞</span></Button>
-                      <Button size="icon" variant="ghost" onClick={() => setTimer(p.id, "10s")} title="10 seconds"><span className="text-[10px]">10s</span></Button>
-                      <Button size="icon" variant="ghost" onClick={() => setTimer(p.id, "15s")} title="15 seconds"><span className="text-[10px]">15s</span></Button>
-                      <Button size="icon" variant="ghost" onClick={() => { setMovePhotoId(p.id); setMoveAlbumId(p.album_id ?? "none"); setShowMoveDialog(true); }} title="Move to album"><Move className="h-3.5 w-3.5" /></Button>
+          {albumsData?.map((a) => {
+            const albumId = a.id === "none" ? "none" : a.id;
+            const isDragOver = dragOverAlbum === albumId;
+            return (
+              <div
+                key={a.id}
+                className={`rounded-3xl border bg-card p-5 shadow-soft transition-colors ${isDragOver ? "border-primary bg-primary/5 ring-2 ring-primary/20" : ""}`}
+                onDragOver={(e) => handleDragOver(e, albumId)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, albumId)}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-semibold">{a.name}</span>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${a.is_private ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"}`}>
+                    <Lock className="h-3 w-3" /> {a.is_private ? "Private" : "Public"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">{a.photos.length} photo{a.photos.length !== 1 ? "s" : ""}</p>
+                <div className="grid gap-2">
+                  {a.photos.map((p) => (
+                    <div
+                      key={p.id}
+                      className={`relative aspect-square overflow-hidden rounded-xl bg-muted transition-opacity ${draggedPhoto?.id === p.id ? "opacity-50" : ""}`}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, p.id, p.album_id ?? "none")}
+                      onDragEnd={handleDragEnd}
+                    >
+                      {urls[p.path] ? <img src={urls[p.path]} alt="" className="h-full w-full object-cover" /> : <div className="h-full flex items-center justify-center text-muted-foreground">?</div>}
+                      <div className="absolute top-2 right-2 flex gap-1">
+                        <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); setTimer(p.id, "normal"); }} title="Normal"><span className="text-[10px]">∞</span></Button>
+                        <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); setTimer(p.id, "10s"); }} title="10 seconds"><span className="text-[10px]">10s</span></Button>
+                        <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); setTimer(p.id, "15s"); }} title="15 seconds"><span className="text-[10px]">15s</span></Button>
+                        <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); setMovePhotoId(p.id); setMoveAlbumId(p.album_id ?? "none"); setShowMoveDialog(true); }} title="Move to album"><Move className="h-3.5 w-3.5" /></Button>
+                      </div>
+                      <div className="absolute bottom-2 left-2 right-2 flex items-center gap-1 text-xs">
+                        {p.view_timer && p.view_timer !== "normal" && <span className="bg-black/70 text-white px-1.5 py-0.5 rounded">{p.view_timer}</span>}
+                      </div>
                     </div>
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center gap-1 text-xs">
-                      {p.view_timer && p.view_timer !== "normal" && <span className="bg-black/70 text-white px-1.5 py-0.5 rounded">{p.view_timer}</span>}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+                <Button size="sm" variant="destructive" disabled={deletingId === a.id} onClick={() => remove(a.id)} className="mt-3 w-full">{deletingId === a.id ? "Deleting…" : "Delete album"}</Button>
               </div>
-              <Button size="sm" variant="destructive" disabled={deletingId === a.id} onClick={() => remove(a.id)} className="mt-3 w-full">{deletingId === a.id ? "Deleting…" : "Delete album"}</Button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
