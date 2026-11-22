@@ -6,6 +6,12 @@ import { ageOf, type Profile } from "@/lib/data";
 export function ProfileCard({ p, photo, action, to, toParams }: { p: Profile; photo?: string | undefined; action?: ReactNode; to?: string; toParams?: Record<string, string> }) {
   const age = ageOf(p.birthdate);
   
+  const handleClick = () => {
+    if (to && toParams) {
+      console.log("[ProfileCard] Navigating to:", to, "with params:", toParams);
+    }
+  };
+  
   const cardContent = (
     <>
       <div className="relative aspect-[4/5] bg-muted">
@@ -42,14 +48,14 @@ export function ProfileCard({ p, photo, action, to, toParams }: { p: Profile; ph
 
   if (to) {
     return (
-      <Link to={to} params={toParams} className="overflow-hidden rounded-3xl border bg-card shadow-soft transition-shadow hover:shadow-lg cursor-pointer">
+      <Link to={to} params={toParams} className="overflow-hidden rounded-3xl border bg-card shadow-soft transition-shadow hover:shadow-lg cursor-pointer" onClick={handleClick}>
         {cardContent}
       </Link>
     );
   }
   
   return (
-    <div className="overflow-hidden rounded-3xl border bg-card shadow-soft">
+    <div className="overflow-hidden rounded-3xl border bg-card shadow-soft" onClick={handleClick}>
       {cardContent}
     </div>
   );

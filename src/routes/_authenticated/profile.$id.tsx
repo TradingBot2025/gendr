@@ -111,6 +111,7 @@ function ProfileView() {
 
   if (!me) return <div className="flex h-screen items-center justify-center">Loading…</div>;
   if (!profile?.profile) return <div className="p-8 text-center text-muted-foreground">Profile not found.</div>;
+  console.log("[ProfileView] id:", id, "uid:", uid, "redirect:", id === uid);
   if (id === uid) return <Link to="/profile" replace />;
 
   const p = profile.profile;
