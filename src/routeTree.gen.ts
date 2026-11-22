@@ -13,17 +13,18 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedAlbumsRouteImport } from './routes/_authenticated/albums'
 import { Route as AuthenticatedConnectionsRouteImport } from './routes/_authenticated/connections'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedDiscoverRouteImport } from './routes/_authenticated/discover'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedRandomRouteImport } from './routes/_authenticated/random'
-import { Route as AuthenticatedChatIdRouteImport } from './routes/_authenticated/chat.$id'
-import { Route as AuthenticatedAlbumsRouteImport } from './routes/_authenticated/albums'
-import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
 import { Route as AuthenticatedReferralsRouteImport } from './routes/_authenticated/referrals'
 import { Route as AuthenticatedTermsRouteImport } from './routes/_authenticated/terms'
+import { Route as AuthenticatedChatIdRouteImport } from './routes/_authenticated/chat.$id'
+import { Route as AuthenticatedProfileIdRouteImport } from './routes/_authenticated/profile.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -44,9 +45,19 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAlbumsRoute = AuthenticatedAlbumsRouteImport.update({
+  id: '/albums',
+  path: '/albums',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedConnectionsRoute =
@@ -75,21 +86,6 @@ const AuthenticatedRandomRoute = AuthenticatedRandomRouteImport.update({
   path: '/random',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedChatIdRoute = AuthenticatedChatIdRouteImport.update({
-  id: '/chat/$id',
-  path: '/chat/$id',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAlbumsRoute = AuthenticatedAlbumsRouteImport.update({
-  id: '/albums',
-  path: '/albums',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({
-  id: '/account',
-  path: '/account',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedReferralsRoute = AuthenticatedReferralsRouteImport.update({
   id: '/referrals',
   path: '/referrals',
@@ -100,38 +96,50 @@ const AuthenticatedTermsRoute = AuthenticatedTermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedChatIdRoute = AuthenticatedChatIdRouteImport.update({
+  id: '/chat/$id',
+  path: '/chat/$id',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedProfileIdRoute = AuthenticatedProfileIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedProfileRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/account': typeof AuthenticatedAccountRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/albums': typeof AuthenticatedAlbumsRoute
   '/connections': typeof AuthenticatedConnectionsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/discover': typeof AuthenticatedDiscoverRoute
-  '/profile': typeof AuthenticatedProfileRoute
+  '/profile': typeof AuthenticatedProfileRouteWithChildren
   '/random': typeof AuthenticatedRandomRoute
-  '/chat/$id': typeof AuthenticatedChatIdRoute
-  '/albums': typeof AuthenticatedAlbumsRoute
-  '/account': typeof AuthenticatedAccountRoute
   '/referrals': typeof AuthenticatedReferralsRoute
   '/terms': typeof AuthenticatedTermsRoute
+  '/chat/$id': typeof AuthenticatedChatIdRoute
+  '/profile/$id': typeof AuthenticatedProfileIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/account': typeof AuthenticatedAccountRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/albums': typeof AuthenticatedAlbumsRoute
   '/connections': typeof AuthenticatedConnectionsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/discover': typeof AuthenticatedDiscoverRoute
-  '/profile': typeof AuthenticatedProfileRoute
+  '/profile': typeof AuthenticatedProfileRouteWithChildren
   '/random': typeof AuthenticatedRandomRoute
-  '/chat/$id': typeof AuthenticatedChatIdRoute
-  '/albums': typeof AuthenticatedAlbumsRoute
-  '/account': typeof AuthenticatedAccountRoute
   '/referrals': typeof AuthenticatedReferralsRoute
   '/terms': typeof AuthenticatedTermsRoute
+  '/chat/$id': typeof AuthenticatedChatIdRoute
+  '/profile/$id': typeof AuthenticatedProfileIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -139,17 +147,18 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/_authenticated/account': typeof AuthenticatedAccountRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
+  '/_authenticated/albums': typeof AuthenticatedAlbumsRoute
   '/_authenticated/connections': typeof AuthenticatedConnectionsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/discover': typeof AuthenticatedDiscoverRoute
-  '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/_authenticated/profile': typeof AuthenticatedProfileRouteWithChildren
   '/_authenticated/random': typeof AuthenticatedRandomRoute
-  '/_authenticated/chat/$id': typeof AuthenticatedChatIdRoute
-  '/_authenticated/albums': typeof AuthenticatedAlbumsRoute
-  '/_authenticated/account': typeof AuthenticatedAccountRoute
   '/_authenticated/referrals': typeof AuthenticatedReferralsRoute
   '/_authenticated/terms': typeof AuthenticatedTermsRoute
+  '/_authenticated/chat/$id': typeof AuthenticatedChatIdRoute
+  '/_authenticated/profile/$id': typeof AuthenticatedProfileIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -157,50 +166,53 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/reset-password'
+    | '/account'
     | '/admin'
+    | '/albums'
     | '/connections'
     | '/dashboard'
     | '/discover'
     | '/profile'
     | '/random'
-    | '/chat/$id'
-    | '/albums'
-    | '/account'
     | '/referrals'
     | '/terms'
+    | '/chat/$id'
+    | '/profile/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/reset-password'
+    | '/account'
     | '/admin'
+    | '/albums'
     | '/connections'
     | '/dashboard'
     | '/discover'
     | '/profile'
     | '/random'
-    | '/chat/$id'
-    | '/albums'
-    | '/account'
     | '/referrals'
     | '/terms'
+    | '/chat/$id'
+    | '/profile/$id'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
     | '/reset-password'
+    | '/_authenticated/account'
     | '/_authenticated/admin'
+    | '/_authenticated/albums'
     | '/_authenticated/connections'
     | '/_authenticated/dashboard'
     | '/_authenticated/discover'
     | '/_authenticated/profile'
     | '/_authenticated/random'
-    | '/_authenticated/chat/$id'
-    | '/_authenticated/albums'
-    | '/_authenticated/account'
     | '/_authenticated/referrals'
     | '/_authenticated/terms'
+    | '/_authenticated/chat/$id'
+    | '/_authenticated/profile/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -240,11 +252,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/account': {
+      id: '/_authenticated/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AuthenticatedAccountRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/albums': {
+      id: '/_authenticated/albums'
+      path: '/albums'
+      fullPath: '/albums'
+      preLoaderRoute: typeof AuthenticatedAlbumsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/connections': {
@@ -282,27 +308,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRandomRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/chat/$id': {
-      id: '/_authenticated/chat/$id'
-      path: '/chat/$id'
-      fullPath: '/chat/$id'
-      preLoaderRoute: typeof AuthenticatedChatIdRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/albums': {
-      id: '/_authenticated/albums'
-      path: '/albums'
-      fullPath: '/albums'
-      preLoaderRoute: typeof AuthenticatedAlbumsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/account': {
-      id: '/_authenticated/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof AuthenticatedAccountRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/referrals': {
       id: '/_authenticated/referrals'
       path: '/referrals'
@@ -317,35 +322,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTermsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/chat/$id': {
+      id: '/_authenticated/chat/$id'
+      path: '/chat/$id'
+      fullPath: '/chat/$id'
+      preLoaderRoute: typeof AuthenticatedChatIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/profile/$id': {
+      id: '/_authenticated/profile/$id'
+      path: '/$id'
+      fullPath: '/profile/$id'
+      preLoaderRoute: typeof AuthenticatedProfileIdRouteImport
+      parentRoute: typeof AuthenticatedProfileRoute
+    }
   }
 }
 
+interface AuthenticatedProfileRouteChildren {
+  AuthenticatedProfileIdRoute: typeof AuthenticatedProfileIdRoute
+}
+
+const AuthenticatedProfileRouteChildren: AuthenticatedProfileRouteChildren = {
+  AuthenticatedProfileIdRoute: AuthenticatedProfileIdRoute,
+}
+
+const AuthenticatedProfileRouteWithChildren =
+  AuthenticatedProfileRoute._addFileChildren(AuthenticatedProfileRouteChildren)
+
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAccountRoute: typeof AuthenticatedAccountRoute
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
+  AuthenticatedAlbumsRoute: typeof AuthenticatedAlbumsRoute
   AuthenticatedConnectionsRoute: typeof AuthenticatedConnectionsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDiscoverRoute: typeof AuthenticatedDiscoverRoute
-  AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+  AuthenticatedProfileRoute: typeof AuthenticatedProfileRouteWithChildren
   AuthenticatedRandomRoute: typeof AuthenticatedRandomRoute
-  AuthenticatedChatIdRoute: typeof AuthenticatedChatIdRoute
-  AuthenticatedAlbumsRoute: typeof AuthenticatedAlbumsRoute
-  AuthenticatedAccountRoute: typeof AuthenticatedAccountRoute
   AuthenticatedReferralsRoute: typeof AuthenticatedReferralsRoute
   AuthenticatedTermsRoute: typeof AuthenticatedTermsRoute
+  AuthenticatedChatIdRoute: typeof AuthenticatedChatIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAccountRoute: AuthenticatedAccountRoute,
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
+  AuthenticatedAlbumsRoute: AuthenticatedAlbumsRoute,
   AuthenticatedConnectionsRoute: AuthenticatedConnectionsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDiscoverRoute: AuthenticatedDiscoverRoute,
-  AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+  AuthenticatedProfileRoute: AuthenticatedProfileRouteWithChildren,
   AuthenticatedRandomRoute: AuthenticatedRandomRoute,
-  AuthenticatedChatIdRoute: AuthenticatedChatIdRoute,
-  AuthenticatedAlbumsRoute: AuthenticatedAlbumsRoute,
-  AuthenticatedAccountRoute: AuthenticatedAccountRoute,
   AuthenticatedReferralsRoute: AuthenticatedReferralsRoute,
   AuthenticatedTermsRoute: AuthenticatedTermsRoute,
+  AuthenticatedChatIdRoute: AuthenticatedChatIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -360,13 +390,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
