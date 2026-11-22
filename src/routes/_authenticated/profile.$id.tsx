@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BadgeCheck, Flag, MapPin, MessageCircle, Shield, User, Heart, X, Check, Loader2 } from "lucide-react";
+import { BadgeCheck, Flag, MapPin, MessageCircle, Shield, User, Heart, X, Check, Loader2, Image } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ageOf, GENDERS, ORIENTATIONS, useMe, useSigned, logProfileView, reportProfile } from "@/lib/data";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,7 @@ function ProfileView() {
     queryFn: async () => {
       const { data: p } = await supabase.from("profiles").select("*").eq("id", id).maybeSingle();
       if (!p) return null;
-      // Check connection status first to determine photo visibility
+      // Check connection status first to determine photo/album visibility
       const { data: conns } = await supabase.from("connections").select("*");
       const conn = conns?.find((c: any) => 
         (c.requester === uid && c.addressee === id) || (c.requester === id && c.addressee === uid)
@@ -60,9 +60,26 @@ function ProfileView() {
       if (!isConnected) {
         photosQuery = photosQuery.eq("is_private", false);
       }
-      const { data: photos } = await photosQuery;
+      const [{ data: photos }, { data: albums }] = await Promise.all([
+        photosQuery,
+        // Fetch albums: own + private (if connected)
+        isConnected 
+          ? supabase.from("photo_albums").select("*").eq("user_id", id).order("created_at", { ascending: false })
+          : supabase.from("photo_albums").select("*").eq("user_id", id).eq("is_private", false).order("created_at", { ascending: false })
+      ]);
       
-      return { profile: p, photos: photos ?? [], connections: conns ?? [] };
+      // Group photos by album
+      const photosByAlbum: Record<string, typeof photos> = {};
+      (photos ?? []).forEach((ph) => {
+        const k = ph.album_id ?? "none";
+        if (!photosByAlbum[k]) photosByAlbum[k] = [];
+        photosByAlbum[k].push(ph);
+      });
+      
+      // Attach photos to albums
+      const albumsWithPhotos = (albums ?? []).map((a) => ({ ...a, photos: photosByAlbum[a.id] ?? [] }));
+      
+      return { profile: p, photos: photos ?? [], albums: albumsWithPhotos, connections: conns ?? [] };
     },
   });
 
@@ -304,6 +321,30 @@ function ProfileView() {
           </div>
         </div>
       </div>
+
+      {/* Albums */}
+      {profile?.albums?.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-2xl font-bold flex items-center gap-2"><Image className="h-6 w-6" />Albums ({profile.albums.length})</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {profile.albums.map((album: any) => (
+              <div key={album.id} className="rounded-3xl border bg-card overflow-hidden shadow-soft">
+                <div className="aspect-[4/5] bg-muted relative">
+                  {album.photos?.length > 0 && album.photos[0]?.path && urls[album.photos[0].path] ? (
+                    <img src={urls[album.photos[0].path]} alt={album.name} className="h-full w-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  ) : (
+                    <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">{album.name?.[0]}</div>
+                  )}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent p-4 text-stage-foreground">
+                    <div className="font-semibold">{album.name}</div>
+                    <div className="text-sm opacity-90">{album.photos?.length ?? 0} photo{album.photos?.length !== 1 ? "s" : ""}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Additional Info Cards */}
       <div className="grid gap-4 sm:grid-cols-2">
