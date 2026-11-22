@@ -1,11 +1,14 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Compass, Heart, LayoutDashboard, LogOut, Shield, Shuffle, User } from "lucide-react";
+import { Compass, Heart, LayoutDashboard, LogOut, Shield, Shuffle, User, MessageCircle, Mail, Settings, Album, Users as UsersIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
+import { toast } from "sonner";
 import { CallProvider } from "@/lib/calls";
 import { CallOverlay } from "@/components/app/CallOverlay";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -21,12 +24,39 @@ function Shell() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const [unread, setUnread] = useState(0);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   const signOut = async () => {
     await qc.cancelQueries();
     qc.clear();
     await supabase.auth.signOut();
     navigate({ to: "/auth", replace: true });
+  };
+
+  const openMessages = useCallback(() => {
+    navigate({ to: "/connections" });
+    setDropdownOpen(false);
+    setNotifOpen(false);
+  }, [navigate]);
+
+  useEffect(() => {
+    const ch = supabase
+      .channel(`msg-notify-${me?.user.id}`)
+      .on("broadcast", { event: "new_message" }, () => {
+        setUnread((n) => n + 1);
+        setNotifOpen(true);
+        toastNewMessage();
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [me?.user.id]);
+
+  const toastNewMessage = () => {
+    toast("New message", { action: { label: "Open", onClick: openMessages } });
   };
 
   if (isLoading || !me) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
@@ -43,13 +73,16 @@ function Shell() {
   const nav = [
     { to: "/dashboard", label: "Home", icon: LayoutDashboard },
     { to: "/discover", label: "Discover", icon: Compass },
-    { to: "/connections", label: "Matches", icon: Heart },
+    { to: "/connections", label: "Matches", icon: Heart, badge: unread > 0 ? unread : undefined },
     { to: "/random", label: "Random", icon: Shuffle },
     { to: "/profile", label: "Profile", icon: User },
+    { to: "/albums", label: "Albums", icon: Album },
+    { to: "/referrals", label: "Refer", icon: UsersIcon },
+    { to: "/account", label: "Account", icon: Settings },
     ...(me.isAdmin ? [{ to: "/admin", label: "Admin", icon: Shield }] : []),
   ] as const;
 
-  const gated = !me.complete && !path.startsWith("/profile");
+  const gated = !me.complete && !path.startsWith("/profile") && !path.startsWith("/account");
   const inChat = path.startsWith("/chat/");
 
   return (
@@ -58,15 +91,18 @@ function Shell() {
         <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r bg-sidebar p-5 md:flex">
           <span className="mb-8 font-display text-2xl font-bold text-primary">Gender</span>
           <nav className="flex flex-1 flex-col gap-1">
-            {nav.map((n) => (
-              <Link key={n.to} to={n.to} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent" activeProps={{ className: "bg-sidebar-accent text-foreground" }}>
-                <n.icon className="h-4 w-4" />{n.label}
-              </Link>
-            ))}
+            {nav.map((n) => {
+              const active = path === n.to;
+              return (
+                <Link key={n.to} to={n.to} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent" activeProps={{ className: "bg-sidebar-accent text-foreground" }}>
+                  <n.icon className="h-4 w-4" />{n.label}{n.badge && <span className="ml-auto inline-flex items-center justify-center min-h-5 w-5 rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">{n.badge}</span>}
+                </Link>
+              );
+            })}
           </nav>
           <Button variant="ghost" className="justify-start" onClick={signOut}><LogOut />Sign out</Button>
         </aside>
-        <main className={`flex-1 ${inChat ? "" : "pb-20 md:pb-0"}`}>
+        <main className={`flex-1 ${inChat ? "" : "pb-20 md:pb-0}"} ref={notifRef}>
           {gated ? (
             <div className="mx-auto mt-24 max-w-md rounded-3xl border bg-card p-8 text-center shadow-soft">
               <h2 className="text-2xl font-bold">Finish your profile</h2>
@@ -75,6 +111,13 @@ function Shell() {
             </div>
           ) : (
             <Outlet />
+          )}
+          {unread > 0 && (
+            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-primary px-3 py-2 shadow-xl animate-in slide-in-from-bottom-2">
+              <MessageCircle className="h-4 w-4 text-primary-foreground" />
+              <span className="text-xs font-medium text-primary-foreground">You have {unread} new message{unread !== 1 ? "s" : ""}</span>
+              <Button size="icon" variant="ghost" className="h-6 w-6 text-primary-foreground" onClick={openMessages}><Mail className="h-4 w-4" /></Button>
+            </div>
           )}
         </main>
         {!inChat && (
@@ -86,8 +129,24 @@ function Shell() {
             ))}
           </nav>
         )}
+        <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+          <DropdownMenuTrigger asChild ref={dropdownRef}>
+            <Button size="icon" variant="ghost" className="fixed bottom-4 right-4 z-50 h-10 w-10 rounded-full border shadow-lg" aria-label="Notifications">
+              <MessageCircle className="h-5 w-5" />
+              {unread > 0 && <span className="absolute top-0 right-0 h-3 w-3 rounded-full bg-destructive border-2 border-background text-[10px] flex items-center justify-center">{unread}</span>}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuItem onClick={openMessages} className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4" /> Messages{unread > 0 && <span className="ml-auto text-xs bg-destructive text-destructive-foreground rounded-full px-1.5">{unread}</span>}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { navigate({ to: "/account" }); setDropdownOpen(false); }}><Settings className="h-4 w-4 mr-2" />Account</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={signOut} className="text-destructive"><LogOut className="h-4 w-4 mr-2" />Sign out</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <CallOverlay />
       </div>
-      <CallOverlay />
     </CallProvider>
   );
 }

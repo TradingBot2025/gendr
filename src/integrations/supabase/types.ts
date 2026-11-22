@@ -14,6 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_actions: {
+        Row: {
+          admin_id: string
+          action_type: string
+          created_at: string
+          details: string | null
+          id: string
+          target_id: string
+        }
+        Insert: {
+          admin_id: string
+          action_type: string
+          created_at?: string
+          details?: string | null
+          id?: string
+          target_id: string
+        }
+        Update: {
+          admin_id?: string
+          action_type?: string
+          created_at?: string
+          details?: string | null
+          id?: string
+          target_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_actions_admin_id_fkey"
+            columns: ["admin_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "admin_actions_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ads_placements: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          position: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          position?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          position?: string
+        }
+        Relationships: []
+      }
       connections: {
         Row: {
           addressee: string
@@ -61,6 +127,7 @@ export type Database = {
           body: string | null
           connection_id: string
           created_at: string
+          expires_at: string | null
           id: string
           sender: string
         }
@@ -71,6 +138,7 @@ export type Database = {
           body?: string | null
           connection_id: string
           created_at?: string
+          expires_at?: string | null
           id?: string
           sender: string
         }
@@ -81,6 +149,7 @@ export type Database = {
           body?: string | null
           connection_id?: string
           created_at?: string
+          expires_at?: string | null
           id?: string
           sender?: string
         }
@@ -101,32 +170,116 @@ export type Database = {
           },
         ]
       }
-      photos: {
+      photo_albums: {
         Row: {
           created_at: string
           id: string
-          path: string
-          position: number
+          is_private: boolean
+          name: string
           user_id: string
         }
         Insert: {
           created_at?: string
           id?: string
-          path: string
-          position?: number
+          is_private?: boolean
+          name?: string
           user_id: string
         }
         Update: {
           created_at?: string
           id?: string
-          path?: string
-          position?: number
+          is_private?: boolean
+          name?: string
           user_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "photo_albums_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      photos: {
+        Row: {
+          album_id: string | null
+          created_at: string
+          id: string
+          is_private: boolean
+          path: string
+          position: number
+          user_id: string
+          view_timer: string
+        }
+        Insert: {
+          album_id?: string | null
+          created_at?: string
+          id?: string
+          is_private?: boolean
+          path: string
+          position?: number
+          user_id: string
+          view_timer?: string
+        }
+        Update: {
+          album_id?: string | null
+          created_at?: string
+          id?: string
+          is_private?: boolean
+          path?: string
+          position?: number
+          user_id?: string
+          view_timer?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "photos_album_id_fkey"
+            columns: ["album_id"]
+            isOneToOne: false
+            referencedRelation: "photo_albums"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "photos_user_id_fkey"
             columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_views: {
+        Row: {
+          created_at: string
+          id: string
+          viewed_id: string
+          viewer_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          viewed_id: string
+          viewer_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          viewed_id?: string
+          viewer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_views_viewed_id_fkey"
+            columns: ["viewed_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_views_viewer_id_fkey"
+            columns: ["viewer_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -141,10 +294,14 @@ export type Database = {
           city: string | null
           country: string | null
           created_at: string
+          country: string | null
           display_name: string | null
           email: string | null
           gender: string | null
           id: string
+          last_seen_at: string | null
+          latitude: number | null
+          longitude: number | null
           orientation: string | null
           verified: boolean
         }
@@ -159,6 +316,9 @@ export type Database = {
           email?: string | null
           gender?: string | null
           id: string
+          last_seen_at?: string | null
+          latitude?: number | null
+          longitude?: number | null
           orientation?: string | null
           verified?: boolean
         }
@@ -173,10 +333,113 @@ export type Database = {
           email?: string | null
           gender?: string | null
           id?: string
+          last_seen_at?: string | null
+          latitude?: number | null
+          longitude?: number | null
           orientation?: string | null
           verified?: boolean
         }
         Relationships: []
+      }
+      referrals: {
+        Row: {
+          code: string
+          completed_at: string | null
+          created_at: string
+          id: string
+          referrer_id: string
+          referee_id: string | null
+          status: string
+        }
+        Insert: {
+          code: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          referrer_id: string
+          referee_id?: string | null
+          status?: string
+        }
+        Update: {
+          code?: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          referrer_id?: string
+          referee_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referrals_referee_id_fkey"
+            columns: ["referee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referrals_referrer_id_fkey"
+            columns: ["referrer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reports: {
+        Row: {
+          created_at: string
+          id: string
+          reason: string
+          reported_id: string
+          reporter_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          reason: string
+          reported_id: string
+          reporter_id: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          reason?: string
+          reported_id?: string
+          reviewer_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reports_reported_id_fkey"
+            columns: ["reported_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reports_reporter_id_fkey"
+            columns: ["reporter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reports_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -247,7 +510,7 @@ export type Tables<
     ? R
     : never
   : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
+      DefaultSchema["Views"])
     ? (DefaultSchema["Tables"] &
         DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R

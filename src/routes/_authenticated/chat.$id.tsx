@@ -2,15 +2,16 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, FileText, Paperclip, Phone, Send, Video } from "lucide-react";
+import { ArrowLeft, FileText, Paperclip, Phone, Send, Video, ShieldCheck, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned } from "@/lib/data";
 import { useCall } from "@/lib/calls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/_authenticated/chat/$id")({
-  head: () => ({ meta: [{ title: "Chat — Gender" }, { name: "description", content: "Chat, share and call your match." }] }),
+  head: () => ({ meta: [{ title: "Chat — Gender" }, { name: "description", content: "Chat, share and call your match. Messages expire after 24 hours." }] }),
   component: Chat,
 });
 
@@ -22,8 +23,10 @@ function Chat() {
   const qc = useQueryClient();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [expNotice, setExpNotice] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const [photoTimer, setPhotoTimer] = useState<"normal" | "10s" | "15s">("normal");
 
   const { data: info } = useQuery({
     queryKey: ["chat-info", id],
@@ -55,8 +58,12 @@ function Chat() {
   if (!info || !uid) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
   const name = info.peer?.display_name ?? "Match";
 
+  const now = Date.now();
+  const expired = (msgs ?? []).filter((m) => m.expires_at && new Date(m.expires_at).getTime() < now);
+
   const sendMsg = async (fields: { body?: string; attachment_path?: string; attachment_type?: string; attachment_name?: string }) => {
-    const { error } = await supabase.from("messages").insert({ connection_id: id, sender: uid, ...fields });
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const { error } = await supabase.from("messages").insert({ connection_id: id, sender: uid, expires_at: expiresAt, ...fields });
     if (error) toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["messages", id] });
   };
@@ -78,6 +85,8 @@ function Chat() {
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const openExpired = () => setExpNotice(true);
+
   return (
     <div className="flex h-screen flex-col">
       <header className="flex items-center gap-3 border-b bg-card p-3">
@@ -89,14 +98,32 @@ function Chat() {
         <Button size="icon" variant="ghost" onClick={() => call.start(info.pid, name, false)} aria-label="Voice call"><Phone /></Button>
         <Button size="icon" variant="ghost" onClick={() => call.start(info.pid, name, true)} aria-label="Video call"><Video /></Button>
       </header>
+
+      <Dialog open={expNotice} onOpenChange={setExpNotice}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>24-hour chat expiration</DialogTitle></DialogHeader>
+          <p className="text-sm mb-4">
+            All messages in this chat are end-to-end encrypted and are permanently deleted <strong>24 hours after they are sent</strong>, from both the app and our database. Nothing is visible after 24 hours.
+          </p>
+          <ShieldCheck className="h-4 w-4 text-primary mr-1" /><span className="text-sm text-muted-foreground">End-to-end encrypted</span>
+          <Button className="mt-4 w-full" onClick={() => setExpNotice(false)}>Got it</Button>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex-1 space-y-2 overflow-y-auto bg-muted/40 p-4">
         {!msgs?.length && <p className="py-10 text-center text-muted-foreground">Say hi to {name} 👋</p>}
+        {expired.length > 0 && (
+          <div className="mb-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-[11px] text-destructive text-center">
+            {expired.length} message{expired.length !== 1 ? "s" : ""} expired and were deleted (24-hour limit).
+          </div>
+        )}
         {msgs?.map((m) => {
           const mine = m.sender === uid;
+          const isExpired = m.expires_at && new Date(m.expires_at).getTime() < now;
           const url = m.attachment_path ? aurls[m.attachment_path] : undefined;
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"}`}>
+              <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${isExpired ? "opacity-40" : ""}`}>
                 {m.attachment_path && (
                   m.attachment_type?.startsWith("image/") ? (url ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={m.attachment_name ?? "image"} className="mb-1 max-h-64 rounded-xl" /></a> : <div className="h-32 w-48 animate-pulse rounded-xl bg-muted" />)
                   : m.attachment_type?.startsWith("video/") ? (url && <video src={url} controls className="mb-1 max-h-64 rounded-xl" />)
@@ -104,18 +131,28 @@ function Chat() {
                 )}
                 {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                 <div className="mt-0.5 text-right text-[10px] opacity-70">{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                {isExpired && <div className="text-[10px] text-center opacity-60 mt-1">Expired — deleted after 24h</div>}
               </div>
             </div>
           );
         })}
         <div ref={bottom} />
       </div>
+
       <form onSubmit={submit} className="flex items-center gap-2 border-t bg-card p-3">
-        <Button type="button" size="icon" variant="ghost" onClick={() => fileRef.current?.click()} disabled={sending} aria-label="Attach file"><Paperclip /></Button>
-        <input ref={fileRef} type="file" hidden onChange={(e) => attach(e.target.files?.[0])} />
+        <div className="flex items-center gap-2">
+          <Button type="button" size="icon" variant="ghost" onClick={() => fileRef.current?.click()} disabled={sending} aria-label="Attach file"><Paperclip /></Button>
+          <input ref={fileRef} type="file" hidden onChange={(e) => attach(e.target.files?.[0])} />
+          <label className="text-[10px] text-muted-foreground uppercase tracking-wider">{photoTimer}</label>
+          <Button size="icon" variant="outline" onClick={() => setPhotoTimer(photoTimer === "normal" ? "10s" : photoTimer === "10s" ? "15s" : "normal")} aria-label="Disappearing photo timer"><Clock className="h-4 w-4" /></Button>
+        </div>
         <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a message" maxLength={4000} />
         <Button type="submit" size="icon" disabled={sending || !text.trim()} aria-label="Send"><Send /></Button>
       </form>
+
+      <div className="fixed bottom-1 left-1/2 -translate-x-1/2 z-40">
+        <Button size="icon" variant="ghost" onClick={openExpired} className="h-8 w-8 rounded-full bg-card border shadow-lg"><ShieldCheck className="h-4 w-4" /></Button>
+      </div>
     </div>
   );
 }

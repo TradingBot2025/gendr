@@ -6,6 +6,13 @@ import type { Tables } from "@/integrations/supabase/types";
 export type Profile = Tables<"profiles">;
 export type Photo = Tables<"photos">;
 export type Connection = Tables<"connections">;
+export type Message = Tables<"messages">;
+export type ProfileView = Tables<"profile_views">;
+export type PhotoAlbum = Tables<"photo_albums">;
+export type Report = Tables<"reports">;
+export type AdminAction = Tables<"admin_actions">;
+export type Referral = Tables<"referrals">;
+export type AdsPlacement = Tables<"ads_placements">;
 
 export const GENDERS = [
   "Woman", "Man", "Trans woman", "Trans man", "Non-binary", "Genderqueer", "Genderfluid",
@@ -73,7 +80,102 @@ export function useSigned(bucket: string, paths: (string | null | undefined)[]) 
     let alive = true;
     signPaths(bucket, list).then((u) => alive && setUrls(u));
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bucket, key]);
   return urls;
+}
+
+/* ---------- New feature hooks ---------- */
+
+export function useProfileViews() {
+  return useQuery({
+    queryKey: ["profile-views"],
+    queryFn: async () => {
+      const [{ data: views }, { data: photos }] = await Promise.all([
+        supabase.from("profile_views").select("*").order("created_at", { ascending: false }),
+        supabase.from("photos").select("user_id,path,position").order("position"),
+      ]);
+      const first: Record<string, string> = {};
+      photos?.forEach((p) => { if (!first[p.user_id]) first[p.user_id] = p.path; });
+      return { views: views ?? [], first };
+    },
+  });
+}
+
+export function usePhotoAlbums() {
+  return useQuery({
+    queryKey: ["photo-albums"],
+    queryFn: async () => {
+      const { data } = await supabase.from("photo_albums").select("*").order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+}
+
+export function useReports() {
+  return useQuery({
+    queryKey: ["reports"],
+    enabled: false,
+    queryFn: async () => {
+      const { data } = await supabase.from("reports").select("*, reporter:profiles!reports_reporter_id_fkey(display_name), reported:profiles!reports_reported_id_fkey(display_name)").order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+}
+
+export function useAdminActions() {
+  return useQuery({
+    queryKey: ["admin-actions"],
+    enabled: false,
+    queryFn: async () => {
+      const { data } = await supabase.from("admin_actions").select("*, admin:profiles!admin_actions_admin_id_fkey(display_name), target:profiles!admin_actions_target_id_fkey(display_name)").order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+}
+
+export function useReferrals() {
+  return useQuery({
+    queryKey: ["referrals"],
+    queryFn: async () => {
+      const { data } = await supabase.from("referrals").select("*").order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+}
+
+export function useAdsPlacements() {
+  return useQuery({
+    queryKey: ["ads-placements"],
+    queryFn: async () => {
+      const { data } = await supabase.from("ads_placements").select("*").eq("is_active", true).order("position");
+      return data ?? [];
+    },
+  });
+}
+
+/* ---------- Actions ---------- */
+
+export async function logProfileView(viewedId: string) {
+  const { error } = await supabase.from("profile_views").insert({ viewer_id: (await supabase.auth.getUser()).data.user!.id, viewed_id: viewedId });
+  if (error) throw error;
+}
+
+export async function reportProfile(reportedId: string, reason: string) {
+  const { error } = await supabase.from("reports").insert({ reporter_id: (await supabase.auth.getUser()).data.user!.id, reported_id: reportedId, reason });
+  if (error) throw error;
+}
+
+export async function createReferral(code: string) {
+  const { error } = await supabase.from("referrals").insert({ code });
+  if (error) throw error;
+}
+
+export async function adminSetFlags(targetId: string, verified: boolean, banned: boolean) {
+  const { error } = await supabase.rpc("admin_set_flags", { _target: targetId, _verified: verified, _banned: banned });
+  if (error) throw error;
+}
+
+export async function adminRecordAction(targetId: string, actionType: "ban" | "unban" | "verify" | "unverify" | "delete", details?: string) {
+  const { error } = await supabase.from("admin_actions").insert({ admin_id: (await supabase.auth.getUser()).data.user!.id, target_id: targetId, action_type: actionType, details });
+  if (error) throw error;
 }

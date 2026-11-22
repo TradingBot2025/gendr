@@ -2,9 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BadgeCheck, Camera, ImagePlus, Star, Trash2 } from "lucide-react";
+import { BadgeCheck, Camera, ImagePlus, Star, Trash2, Lock, Clock, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { GENDERS, ORIENTATIONS, useMe, useSigned } from "@/lib/data";
+import { GENDERS, ORIENTATIONS, useMe, useSigned, usePhotoAlbums, type PhotoAlbum } from "@/lib/data";
 import { verifyFace } from "@/lib/verify.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,10 @@ function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
+  const [albumOpen, setAlbumOpen] = useState(false);
+  const [newAlbum, setNewAlbum] = useState("");
+  const [uploadAlbum, setUploadAlbum] = useState<string | null>(null);
+  const [uploadTimer, setUploadTimer] = useState<"normal" | "10s" | "15s">("normal");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -33,6 +37,7 @@ function ProfilePage() {
   }, [me?.profile]);
 
   const photos = me?.photos ?? [];
+  const { data: albums } = usePhotoAlbums();
   const urls = useSigned("photos", photos.map((p) => p.path));
   if (!me) return null;
   const refresh = () => qc.invalidateQueries({ queryKey: ["me"] });
@@ -54,6 +59,15 @@ function ProfilePage() {
     if (error) toast.error(error.message); else { toast.success("Profile saved"); refresh(); }
   };
 
+  const createAlbum = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!newAlbum.trim()) return;
+    const { error } = await supabase.from("photo_albums").insert({ user_id: me.user.id, name: newAlbum.trim(), is_private: true });
+    if (error) { toast.error(error.message); return; }
+    setNewAlbum(""); setAlbumOpen(false);
+    refresh();
+  };
+
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
     const room = 6 - photos.length;
@@ -66,10 +80,11 @@ function ProfilePage() {
       const path = `${me.user.id}/${crypto.randomUUID()}.${f.name.split(".").pop() ?? "jpg"}`;
       const { error } = await supabase.storage.from("photos").upload(path, f, { contentType: f.type });
       if (error) { toast.error(error.message); continue; }
-      const { error: e2 } = await supabase.from("photos").insert({ user_id: me.user.id, path, position: pos++ });
+      const { error: e2 } = await supabase.from("photos").insert({ user_id: me.user.id, path, position: pos++, album_id: uploadAlbum || null, is_private: !!uploadAlbum, view_timer: uploadTimer });
       if (e2) { toast.error(e2.message); await supabase.storage.from("photos").remove([path]); }
     }
     setUploading(false);
+    setUploadAlbum(null); setUploadTimer("normal");
     if (fileRef.current) fileRef.current.value = "";
     refresh();
   };
@@ -98,16 +113,24 @@ function ProfilePage() {
       {!me.complete && <p className="rounded-2xl bg-accent p-4 text-sm text-accent-foreground">Fill in your name, gender, orientation, birthday, city and add at least one photo to unlock the app.</p>}
 
       <section className="rounded-3xl border bg-card p-6 shadow-soft">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Photos ({photos.length}/6)</h2>
-          <Button variant="outline" disabled={uploading || photos.length >= 6} onClick={() => fileRef.current?.click()}><ImagePlus />{uploading ? "Uploading…" : "Add photos"}</Button>
-          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => upload(e.target.files)} />
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">Photos ({photos.length}/6)</h2>
+            <p className="text-xs text-muted-foreground">Add to a private album to share only with matches. Set a disappearing timer (10s / 15s).</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAlbumOpen(true)} disabled={photos.length >= 6}><Plus className="h-3 w-3 mr-1" />New album</Button>
+            <Button variant="outline" disabled={uploading || photos.length >= 6} onClick={() => fileRef.current?.click()}><ImagePlus />{uploading ? "Uploading…" : "Add photos"}</Button>
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => upload(e.target.files)} />
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {photos.map((p, i) => (
             <div key={p.id} className="group relative aspect-[4/5] overflow-hidden rounded-2xl bg-muted">
               {urls[p.path] && <img src={urls[p.path]} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />}
               {i === 0 && <span className="absolute left-2 top-2 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">Main</span>}
+              {p.album_id && <span className="absolute left-2 top-10 rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground"><Lock className="h-3 w-3" /> Private</span>}
+              {p.view_timer !== "normal" && <span className="absolute right-2 top-10 rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground"><Clock className="h-3 w-3" /> {p.view_timer}</span>}
               <div className="absolute inset-x-2 bottom-2 flex justify-end gap-2">
                 {i > 0 && <Button size="icon" variant="secondary" onClick={() => makeMain(p.id)} aria-label="Make main photo"><Star /></Button>}
                 <Button size="icon" variant="destructive" onClick={() => remove(p.id, p.path)} aria-label="Delete photo"><Trash2 /></Button>
@@ -135,6 +158,16 @@ function ProfilePage() {
       </form>
 
       <VerifyDialog open={verifyOpen} onOpenChange={setVerifyOpen} onDone={refresh} />
+      <Dialog open={albumOpen} onOpenChange={setAlbumOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>New private album</DialogTitle></DialogHeader>
+          <form onSubmit={createAlbum} className="space-y-4 p-4">
+            <div className="space-y-1.5"><Label>Album name</Label><Input value={newAlbum} onChange={(e) => setNewAlbum(e.target.value)} placeholder="e.g. Private moments" /></div>
+            <p className="text-xs text-muted-foreground">Photos in this album are visible only to your accepted matches.</p>
+            <Button type="submit" variant="hero" className="w-full">Create album</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -164,11 +197,31 @@ function VerifyDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenCha
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Face verification</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">Look at the camera. We compare this selfie with your profile photos.</p>
-        <video ref={video} autoPlay playsInline muted className="aspect-[4/3] w-full rounded-2xl bg-muted object-cover" />
-        <Button variant="hero" onClick={capture} disabled={busy}>{busy ? "Checking…" : "Take selfie & verify"}</Button>
+      <DialogContent className="p-0">
+        <div className="relative flex flex-col items-center gap-4 bg-stage p-6 rounded-3xl">
+          <DialogHeader className="absolute top-4 left-4 right-4 z-10">
+            <DialogTitle className="text-stage-foreground">Face verification</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-stage-foreground/80 text-center z-10">Look at the camera. We compare this selfie with your profile photos.</p>
+          <div className="relative aspect-[4/3] w-full max-w-md rounded-2xl overflow-hidden bg-muted">
+            <video ref={video} autoPlay playsInline muted className="h-full w-full object-cover" />
+            {busy && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="relative h-full w-full">
+                  <div className="absolute left-0 right-0 h-[2px] bg-primary animate-scan"></div>
+                  <div className="absolute inset-0 border-2 border-primary/50 animate-pulse rounded-2xl"></div>
+                </div>
+                <div className="absolute bottom-4 flex items-center gap-2 bg-stage/90 px-3 py-1 rounded-full backdrop-blur">
+                  <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                  <span className="text-xs text-stage-foreground">Scanning…</span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="absolute bottom-4 left-4 right-4 z-10">
+            <Button variant="hero" onClick={capture} disabled={busy} className="w-full">{busy ? "Checking…" : "Take selfie & verify"}</Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

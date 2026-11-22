@@ -20,6 +20,9 @@ import { Route as AuthenticatedDiscoverRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedRandomRouteImport } from './routes/_authenticated/random'
 import { Route as AuthenticatedChatIdRouteImport } from './routes/_authenticated/chat.$id'
+import { Route as AuthenticatedAlbumsRouteImport } from './routes/_authenticated/albums'
+import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
+import { Route as AuthenticatedReferralsRouteImport } from './routes/_authenticated/referrals'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,6 +79,21 @@ const AuthenticatedChatIdRoute = AuthenticatedChatIdRouteImport.update({
   path: '/chat/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAlbumsRoute = AuthenticatedAlbumsRouteImport.update({
+  id: '/albums',
+  path: '/albums',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedReferralsRoute = AuthenticatedReferralsRouteImport.update({
+  id: '/referrals',
+  path: '/referrals',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -88,6 +106,9 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileRoute
   '/random': typeof AuthenticatedRandomRoute
   '/chat/$id': typeof AuthenticatedChatIdRoute
+  '/albums': typeof AuthenticatedAlbumsRoute
+  '/account': typeof AuthenticatedAccountRoute
+  '/referrals': typeof AuthenticatedReferralsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -100,6 +121,9 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileRoute
   '/random': typeof AuthenticatedRandomRoute
   '/chat/$id': typeof AuthenticatedChatIdRoute
+  '/albums': typeof AuthenticatedAlbumsRoute
+  '/account': typeof AuthenticatedAccountRoute
+  '/referrals': typeof AuthenticatedReferralsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -114,6 +138,9 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/random': typeof AuthenticatedRandomRoute
   '/_authenticated/chat/$id': typeof AuthenticatedChatIdRoute
+  '/_authenticated/albums': typeof AuthenticatedAlbumsRoute
+  '/_authenticated/account': typeof AuthenticatedAccountRoute
+  '/_authenticated/referrals': typeof AuthenticatedReferralsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -128,6 +155,9 @@ export interface FileRouteTypes {
     | '/profile'
     | '/random'
     | '/chat/$id'
+    | '/albums'
+    | '/account'
+    | '/referrals'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -140,6 +170,9 @@ export interface FileRouteTypes {
     | '/profile'
     | '/random'
     | '/chat/$id'
+    | '/albums'
+    | '/account'
+    | '/referrals'
   id:
     | '__root__'
     | '/'
@@ -153,6 +186,9 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/random'
     | '/_authenticated/chat/$id'
+    | '/_authenticated/albums'
+    | '/_authenticated/account'
+    | '/_authenticated/referrals'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -241,6 +277,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/albums': {
+      id: '/_authenticated/albums'
+      path: '/albums'
+      fullPath: '/albums'
+      preLoaderRoute: typeof AuthenticatedAlbumsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/account': {
+      id: '/_authenticated/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AuthenticatedAccountRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/referrals': {
+      id: '/_authenticated/referrals'
+      path: '/referrals'
+      fullPath: '/referrals'
+      preLoaderRoute: typeof AuthenticatedReferralsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -252,6 +309,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedRandomRoute: typeof AuthenticatedRandomRoute
   AuthenticatedChatIdRoute: typeof AuthenticatedChatIdRoute
+  AuthenticatedAlbumsRoute: typeof AuthenticatedAlbumsRoute
+  AuthenticatedAccountRoute: typeof AuthenticatedAccountRoute
+  AuthenticatedReferralsRoute: typeof AuthenticatedReferralsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -262,6 +322,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedRandomRoute: AuthenticatedRandomRoute,
   AuthenticatedChatIdRoute: AuthenticatedChatIdRoute,
+  AuthenticatedAlbumsRoute: AuthenticatedAlbumsRoute,
+  AuthenticatedAccountRoute: AuthenticatedAccountRoute,
+  AuthenticatedReferralsRoute: AuthenticatedReferralsRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
