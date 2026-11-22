@@ -36,7 +36,9 @@ function Discover() {
     queryKey: ["discover"],
     queryFn: async () => {
       const [{ data: profiles }, { data: photos }, { data: conns }] = await Promise.all([
-        supabase.from("profiles").select("id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at,created_at").eq("banned", false).neq("id", me!.user.id).not("gender", "is", null).limit(2000),
+        // Show all non-banned users except yourself, even if profile incomplete
+        supabase.from("profiles").select("id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at,created_at").eq("banned", false).neq("id", me!.user.id).limit(2000),
+        // Fetch photos - RLS will filter private ones automatically
         supabase.from("photos").select("user_id,path,position,is_private,album_id,view_timer").order("position"),
         supabase.from("connections").select("*"),
       ]);

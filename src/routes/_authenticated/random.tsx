@@ -8,7 +8,7 @@ import { useCall } from "@/lib/calls";
 import { MediaView } from "@/components/app/CallOverlay";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { unlockAudioContext } from "@/lib/audio";
+import { unlockAudioContext, playRingingSound, stopRingingSound } from "@/lib/audio";
 
 export const Route = createFileRoute("/_authenticated/random")({
   head: () => ({ meta: [{ title: "Random video — Gender" }, { name: "description", content: "Meet someone new on a random video call." }] }),
@@ -138,6 +138,16 @@ function Random() {
       setSearching(false);
     }
   }, [selectedCountry]);
+
+  // Handle ringing sound for random calls (global CallOverlay returns null for random)
+  useEffect(() => {
+    if (call.random && call.status === "incoming") {
+      playRingingSound();
+    } else if (call.random && call.status !== "incoming") {
+      stopRingingSound();
+    }
+    return () => { if (call.random) stopRingingSound(); };
+  }, [call.random, call.status]);
 
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-8">
