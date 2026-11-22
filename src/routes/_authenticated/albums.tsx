@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Image, Plus, Trash2, ShieldCheck, Lock } from "lucide-react";
+import { Image, Plus, Trash2, ShieldCheck, Lock, Move } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/albums")({
   head: () => ({ meta: [{ title: "Private Albums — Gender" }, { name: "description", content: "Manage your private photo albums. Shared only with your matches." }] }),
@@ -23,8 +23,11 @@ function Albums() {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [movePhotoId, setMovePhotoId] = useState<string | null>(null);
+  const [moveAlbumId, setMoveAlbumId] = useState<string | null>(null);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
 
-  const { data: albums } = useQuery({
+  const { data: albumsData } = useQuery({
     queryKey: ["albums", me?.user.id],
     enabled: !!me,
     queryFn: async () => {
@@ -38,10 +41,16 @@ function Albums() {
         if (!byAlbum[k]) byAlbum[k] = [];
         byAlbum[k].push(p);
       });
-      return (alb ?? []).map((a) => ({ ...a, photos: byAlbum[a.id] ?? [] }));
+      // Create a "Main photos" pseudo-album for photos not in any album
+      const mainPhotos = byAlbum["none"] ?? [];
+      const albumList = (alb ?? []).map((a) => ({ ...a, photos: byAlbum[a.id] ?? [] }));
+      if (mainPhotos.length > 0) {
+        albumList.unshift({ id: "none", name: "Main photos", is_private: false, created_at: "", photos: mainPhotos });
+      }
+      return albumList;
     },
   });
-  const urls = useSigned("photos", (albums ?? []).flatMap((a) => a.photos.map((p) => p.path)));
+  const urls = useSigned("photos", (albumsData ?? []).flatMap((a) => a.photos.map((p) => p.path)));
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -69,6 +78,16 @@ function Albums() {
     else qc.invalidateQueries({ queryKey: ["albums"] });
   };
 
+  const movePhoto = async (photoId: string, targetAlbumId: string | null) => {
+    const { error } = await supabase.from("photos").update({ album_id: targetAlbumId }).eq("id", photoId);
+    if (error) { toast.error(error.message); return; }
+    toast.success(targetAlbumId ? "Photo moved to album" : "Photo removed from album");
+    setShowMoveDialog(false);
+    setMovePhotoId(null);
+    setMoveAlbumId(null);
+    qc.invalidateQueries({ queryKey: ["albums"] });
+  };
+
   if (!me) return null;
 
   return (
@@ -81,7 +100,7 @@ function Albums() {
         <Button variant="hero" onClick={() => setOpen(true)}><Plus />New album</Button>
       </div>
 
-      {albums?.length === 0 ? (
+      {albumsData?.length === 0 ? (
         <div className="rounded-3xl border border-dashed bg-card p-16 text-center">
           <ShieldCheck className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
           <h3 className="text-lg font-semibold">No private albums yet</h3>
@@ -89,7 +108,7 @@ function Albums() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {albums?.map((a) => (
+          {albumsData?.map((a) => (
             <div key={a.id} className="rounded-3xl border bg-card p-5 shadow-soft">
               <div className="flex items-center justify-between mb-3">
                 <span className="font-semibold">{a.name}</span>
@@ -106,6 +125,10 @@ function Albums() {
                       <Button size="icon" variant="ghost" onClick={() => setTimer(p.id, "normal")} title="Normal"><span className="text-[10px]">∞</span></Button>
                       <Button size="icon" variant="ghost" onClick={() => setTimer(p.id, "10s")} title="10 seconds"><span className="text-[10px]">10s</span></Button>
                       <Button size="icon" variant="ghost" onClick={() => setTimer(p.id, "15s")} title="15 seconds"><span className="text-[10px]">15s</span></Button>
+                      <Button size="icon" variant="ghost" onClick={() => { setMovePhotoId(p.id); setMoveAlbumId(p.album_id ?? "none"); setShowMoveDialog(true); }} title="Move to album"><Move className="h-3.5 w-3.5" /></Button>
+                    </div>
+                    <div className="absolute bottom-2 left-2 right-2 flex items-center gap-1 text-xs">
+                      {p.view_timer && p.view_timer !== "normal" && <span className="bg-black/70 text-white px-1.5 py-0.5 rounded">{p.view_timer}</span>}
                     </div>
                   </div>
                 ))}
@@ -125,6 +148,33 @@ function Albums() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {showMoveDialog && (
+        <Dialog open={showMoveDialog} onOpenChange={() => { setShowMoveDialog(false); setMovePhotoId(null); setMoveAlbumId(null); }}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Move photo</DialogTitle></DialogHeader>
+            <div className="space-y-4 p-4">
+              <p className="text-sm text-muted-foreground">Select destination album (or "None" to remove from album)</p>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                <label className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent cursor-pointer">
+                  <input type="radio" name="moveAlbum" value="none" checked={moveAlbumId === "none"} onChange={() => setMoveAlbumId("none")} className="h-4 w-4" />
+                  <span>None (remove from album)</span>
+                </label>
+                {albumsData?.map((a) => (
+                  <label key={a.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent cursor-pointer">
+                    <input type="radio" name="moveAlbum" value={a.id} checked={moveAlbumId === a.id} onChange={() => setMoveAlbumId(a.id)} className="h-4 w-4" />
+                    <span>{a.name} ({a.is_private ? "Private" : "Public"})</span>
+                  </label>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => { setShowMoveDialog(false); setMovePhotoId(null); setMoveAlbumId(null); }}>Cancel</Button>
+                <Button className="flex-1" onClick={() => movePhoto(movePhotoId!, moveAlbumId === "none" ? null : moveAlbumId!)} disabled={!movePhotoId}>Move</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { PhotoViewer } from "@/components/app/PhotoViewer";
 
 export const Route = createFileRoute("/_authenticated/profile/$id")({
   head: () => ({ meta: [{ title: "Profile — Gender" }, { name: "description", content: "View user profile." }] }),
@@ -41,6 +42,12 @@ function ProfileView() {
   const [reporting, setReporting] = useState(false);
   const [blockAfterReport, setBlockAfterReport] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
+  const [viewerPhotos, setViewerPhotos] = useState<Array<{ id: string; path: string; album_id: string | null; is_private?: boolean; view_timer?: string }> | null>(null);
+  const [moveAlbumId, setMoveAlbumId] = useState<string | null>(null);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const movePhotoId = useRef<string | null>(null);
 
   const { data: profile } = useQuery({
     queryKey: ["profile-view", id],
@@ -142,6 +149,31 @@ function ProfileView() {
     }
   };
 
+  const handleMoveToAlbum = async (photoId: string, albumId: string | null) => {
+    const { error } = await supabase.from("photos").update({ album_id: albumId }).eq("id", photoId);
+    if (error) { toast.error(error.message); return; }
+    toast.success(albumId ? "Moved to album" : "Removed from album");
+    qc.invalidateQueries({ queryKey: ["profile-view", id] });
+    qc.invalidateQueries({ queryKey: ["albums"] });
+  };
+
+  const handleDeletePhoto = async (photoId: string) => {
+    if (!confirm("Delete this photo permanently?")) return;
+    const { error } = await supabase.from("photos").delete().eq("id", photoId);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Photo deleted");
+    qc.invalidateQueries({ queryKey: ["profile-view", id] });
+    qc.invalidateQueries({ queryKey: ["albums"] });
+  };
+
+  const handleSetTimer = async (photoId: string, timer: "normal" | "10s" | "15s") => {
+    const { error } = await supabase.from("photos").update({ view_timer: timer }).eq("id", photoId);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`View timer set to ${timer}`);
+    qc.invalidateQueries({ queryKey: ["profile-view", id] });
+    qc.invalidateQueries({ queryKey: ["albums"] });
+  };
+
   const handleProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -158,7 +190,8 @@ function ProfileView() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
+    <>
+      <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
       {/* Profile Header */}
       <div className="rounded-3xl border bg-card overflow-hidden shadow-soft">
         {/* Photo Carousel */}
@@ -167,13 +200,20 @@ function ProfileView() {
             <>
               <div className="h-full w-full overflow-hidden">
                 {photos.map((ph: any, i: number) => (
-                  <img
+                  <Button
                     key={ph.id}
-                    src={urls[ph.path] || ""}
-                    alt={`${p.display_name}'s photo ${i + 1}`}
-                    className="h-full w-full object-cover"
-                    loading={i === 0 ? "eager" : "lazy"}
-                  />
+                    variant="ghost"
+                    className="h-full w-full p-0"
+                    onClick={() => { setViewerPhotos(null); setPhotoViewerIndex(i); setPhotoViewerOpen(true); }}
+                  >
+                    <img
+                      src={urls[ph.path] || ""}
+                      alt={`${p.display_name}'s photo ${i + 1}`}
+                      className="h-full w-full object-cover"
+                      loading={i === 0 ? "eager" : "lazy"}
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  </Button>
                 ))}
               </div>
               {photos.length > 1 && (
@@ -328,7 +368,13 @@ function ProfileView() {
           <h3 className="text-2xl font-bold flex items-center gap-2"><Image className="h-6 w-6" />Albums ({profile.albums.length})</h3>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {profile.albums.map((album: any) => (
-              <div key={album.id} className="rounded-3xl border bg-card overflow-hidden shadow-soft">
+              <Button
+                key={album.id}
+                variant="ghost"
+                className="rounded-3xl border bg-card overflow-hidden shadow-soft h-auto p-0"
+                onClick={() => album.photos?.length > 0 && (setViewerPhotos(album.photos), setPhotoViewerIndex(0), setPhotoViewerOpen(true))}
+                disabled={!album.photos?.length}
+              >
                 <div className="aspect-[4/5] bg-muted relative">
                   {album.photos?.length > 0 && album.photos[0]?.path && urls[album.photos[0].path] ? (
                     <img src={urls[album.photos[0].path]} alt={album.name} className="h-full w-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -340,7 +386,7 @@ function ProfileView() {
                     <div className="text-sm opacity-90">{album.photos?.length ?? 0} photo{album.photos?.length !== 1 ? "s" : ""}</div>
                   </div>
                 </div>
-              </div>
+              </Button>
             ))}
           </div>
         </div>
@@ -366,5 +412,20 @@ function ProfileView() {
         </div>
       </div>
     </div>
+
+    <PhotoViewer
+      isOpen={photoViewerOpen}
+      onClose={() => { setPhotoViewerOpen(false); setViewerPhotos(null); }}
+      photos={viewerPhotos ?? photos}
+      initialIndex={photoViewerIndex}
+      urls={urls}
+      currentUserId={uid}
+      isOwner={id === uid}
+      onMoveToAlbum={handleMoveToAlbum}
+      onDeletePhoto={handleDeletePhoto}
+      onSetTimer={handleSetTimer}
+      albums={profile?.albums}
+    />
+    </>
   );
 }

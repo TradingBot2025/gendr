@@ -14,6 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/chat/$id")({
   head: () => ({ meta: [{ title: "Chat — Gender" }, { name: "description", content: "Chat, share and call your match. Messages expire after 24 hours." }] }),
@@ -142,7 +143,14 @@ function Chat() {
   const expired = (msgs ?? []).filter((m) => m.expires_at && new Date(m.expires_at).getTime() < now);
 
   const sendMsg = async (fields: { body?: string; attachment_path?: string; attachment_type?: string; attachment_name?: string; max_views?: number | null }) => {
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    let expiresAt: string;
+    if (photoTimer === "10s") {
+      expiresAt = new Date(Date.now() + 10 * 1000).toISOString();
+    } else if (photoTimer === "15s") {
+      expiresAt = new Date(Date.now() + 15 * 1000).toISOString();
+    } else {
+      expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    }
     const { error } = await supabase.from("messages").insert({ 
       connection_id: id, 
       sender: uid, 
@@ -295,10 +303,21 @@ function Chat() {
             <DialogTitle>Attach</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 p-4">
-            <Button variant="outline" className="w-full justify-start" onClick={() => fileRef.current?.click()} disabled={sending}>
-              <Paperclip className="h-4 w-4 mr-2" /> Photo / Video from device
-            </Button>
-            <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={(e) => attach(e.target.files?.[0])} />
+            <div className="space-y-2">
+              <Button variant="outline" className="w-full justify-start" onClick={() => fileRef.current?.click()} disabled={sending}>
+                <Paperclip className="h-4 w-4 mr-2" /> Photo / Video from device
+              </Button>
+              <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={(e) => attach(e.target.files?.[0])} />
+              <Label>Disappearing photo timer</Label>
+              <Select value={photoTimer} onValueChange={setPhotoTimer}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Select timer" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="normal">Normal (24 hours)</SelectItem>
+                  <SelectItem value="10s">10 seconds</SelectItem>
+                  <SelectItem value="15s">15 seconds</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Separator />
             <Button variant="outline" className="w-full justify-start" onClick={() => {
               const allPhotos = myAlbums?.flatMap(a => a.photos.map(p => ({ id: p.id, path: p.path, album_id: a.id }))) ?? [];
