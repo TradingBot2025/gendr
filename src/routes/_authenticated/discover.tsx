@@ -37,7 +37,7 @@ function Discover() {
     queryKey: ["discover"],
     queryFn: async () => {
       const [{ data: profiles }, { data: photos }, { data: conns }] = await Promise.all([
-        supabase.from("profiles").select("*").eq("banned", false).neq("id", me!.user.id).not("gender", "is", null).limit(2000),
+        supabase.from("profiles").select("id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at,created_at").eq("banned", false).neq("id", me!.user.id).not("gender", "is", null).limit(2000),
         supabase.from("photos").select("user_id,path,position,is_private,album_id,view_timer").order("position"),
         supabase.from("connections").select("*"),
       ]);
@@ -141,7 +141,7 @@ function Discover() {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {list.map((p) => {
               const path = data?.firstPhoto[p.id];
-              return <ProfileCard key={p.id} p={p} photo={path ? urls[path] : undefined} action={actionFor(p.id)} to="/profile/$id" toParams={{ id: p.id }} />;
+              return <ProfileCard key={p.id} p={p} photo={path ? urls[path] : undefined} action={actionFor(p.id)} to="/profile/$username" toParams={{ username: p.username ?? p.id }} />;
             })}
           </div>
         )
@@ -164,8 +164,8 @@ function Discover() {
                     key={v.id}
                     p={p}
                     photo={path ? urls[path] : undefined}
-                    to="/profile/$id"
-                    toParams={{ id: p.id }}
+                    to="/profile/$username"
+                    toParams={{ username: p.username ?? p.id }}
                     action={
                       <div className="flex gap-2">
                         {already ? <Button asChild variant="success" className="flex-1"><Link to={`/chat/${connId}`}>Chat</Link></Button> : <Button variant="hero" className="flex-1" onClick={() => connect(p.id)}>Connect</Button>}

@@ -23,7 +23,7 @@ export const Route = createFileRoute("/_authenticated/profile")({
 function ProfilePage() {
   const { data: me } = useMe();
   const qc = useQueryClient();
-  const [form, setForm] = useState({ display_name: "", gender: "", orientation: "", birthdate: "", city: "", country: "", bio: "" });
+  const [form, setForm] = useState({ display_name: "", username: "", gender: "", orientation: "", birthdate: "", city: "", country: "", bio: "" });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
@@ -35,7 +35,7 @@ function ProfilePage() {
 
   useEffect(() => {
     const p = me?.profile;
-    if (p) setForm({ display_name: p.display_name ?? "", gender: p.gender ?? "", orientation: p.orientation ?? "", birthdate: p.birthdate ?? "", city: p.city ?? "", country: p.country ?? "", bio: p.bio ?? "" });
+    if (p) setForm({ display_name: p.display_name ?? "", username: p.username ?? "", gender: p.gender ?? "", orientation: p.orientation ?? "", birthdate: p.birthdate ?? "", city: p.city ?? "", country: p.country ?? "", bio: p.bio ?? "" });
   }, [me?.profile]);
 
   const photos = me?.photos ?? [];
@@ -52,9 +52,13 @@ function ProfilePage() {
       if (b > min) { toast.error("You must be at least 18"); return; }
     }
     if (form.display_name.trim().length < 2) { toast.error("Please enter your name"); return; }
+    if (form.username && form.username.trim().length < 3) { toast.error("Username must be at least 3 characters"); return; }
+    if (form.username && !/^[a-zA-Z0-9_]+$/.test(form.username.trim())) { toast.error("Username can only contain letters, numbers, and underscores"); return; }
     setSaving(true);
     const { error } = await supabase.from("profiles").update({
-      display_name: form.display_name.trim().slice(0, 60), gender: form.gender || null, orientation: form.orientation || null,
+      display_name: form.display_name.trim().slice(0, 60), 
+      username: form.username?.trim() || null,
+      gender: form.gender || null, orientation: form.orientation || null,
       birthdate: form.birthdate || null, city: form.city.trim().slice(0, 80) || null, country: form.country.trim().slice(0, 80) || null, bio: form.bio.trim().slice(0, 500) || null,
     }).eq("id", me.user.id);
     setSaving(false);
@@ -152,6 +156,7 @@ function ProfilePage() {
 
       <form onSubmit={save} className="grid gap-4 rounded-3xl border bg-card p-6 shadow-soft sm:grid-cols-2">
         <div className="space-y-1.5"><Label>Name</Label><Input value={form.display_name} onChange={(e) => set("display_name")(e.target.value)} maxLength={60} /></div>
+        <div className="space-y-1.5"><Label>Username</Label><Input value={form.username} onChange={(e) => set("username")(e.target.value)} placeholder="@username" maxLength={30} pattern="[a-zA-Z0-9_]*" /></div>
         <div className="space-y-1.5"><Label>Email</Label><Input value={me.user.email ?? ""} disabled /></div>
         <div className="space-y-1.5"><Label>Gender</Label>
           <Select value={form.gender} onValueChange={set("gender")}><SelectTrigger><SelectValue placeholder="Choose" /></SelectTrigger><SelectContent>{GENDERS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent></Select>

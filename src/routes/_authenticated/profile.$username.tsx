@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BadgeCheck, Flag, MapPin, MessageCircle, Shield, User, Heart, X, Check, Loader2, Image } from "lucide-react";
+import { BadgeCheck, Flag, MapPin, MessageCircle, Shield, User, Heart, X, Check, Loader2, Image, FileText, Lock, Eye, EyeOff, Send, UserPlus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ageOf, GENDERS, ORIENTATIONS, useMe, useSigned, logProfileView, reportProfile } from "@/lib/data";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { PhotoViewer } from "@/components/app/PhotoViewer";
 
-export const Route = createFileRoute("/_authenticated/profile/$id")({
+export const Route = createFileRoute("/_authenticated/profile/$username")({
   head: () => ({ meta: [{ title: "Profile — Gender" }, { name: "description", content: "View user profile." }] }),
   component: ProfileView,
 });
@@ -30,7 +30,7 @@ const REPORT_REASONS = [
 ];
 
 function ProfileView() {
-  const { id } = Route.useParams();
+  const { username } = Route.useParams();
   const { data: me } = useMe();
   const uid = me?.user.id;
   const qc = useQueryClient();
@@ -48,22 +48,24 @@ function ProfileView() {
   const [moveAlbumId, setMoveAlbumId] = useState<string | null>(null);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const movePhotoId = useRef<string | null>(null);
+  const [showPrivateRequest, setShowPrivateRequest] = useState(false);
+  const [privateRequestMsg, setPrivateRequestMsg] = useState("");
 
   const { data: profile } = useQuery({
-    queryKey: ["profile-view", id],
-    enabled: !!uid && id !== uid,
+    queryKey: ["profile-view", username],
+    enabled: !!uid,
     queryFn: async () => {
-      const { data: p } = await supabase.from("profiles").select("*").eq("id", id).maybeSingle();
+      const { data: p } = await supabase.from("profiles").select("*").eq("username", username).maybeSingle();
       if (!p) return null;
       // Check connection status first to determine photo/album visibility
       const { data: conns } = await supabase.from("connections").select("*");
       const conn = conns?.find((c: any) => 
-        (c.requester === uid && c.addressee === id) || (c.requester === id && c.addressee === uid)
+        (c.requester === uid && c.addressee === p.id) || (c.requester === p.id && c.addressee === uid)
       );
       const isConnected = conn?.status === "accepted";
       
       // Fetch photos: public + private (if connected)
-      let photosQuery = supabase.from("photos").select("*").eq("user_id", id).order("position");
+      let photosQuery = supabase.from("photos").select("*").eq("user_id", p.id).order("position");
       if (!isConnected) {
         photosQuery = photosQuery.eq("is_private", false);
       }
@@ -71,8 +73,8 @@ function ProfileView() {
         photosQuery,
         // Fetch albums: own + private (if connected)
         isConnected 
-          ? supabase.from("photo_albums").select("*").eq("user_id", id).order("created_at", { ascending: false })
-          : supabase.from("photo_albums").select("*").eq("user_id", id).eq("is_private", false).order("created_at", { ascending: false })
+          ? supabase.from("photo_albums").select("*").eq("user_id", p.id).order("created_at", { ascending: false })
+          : supabase.from("photo_albums").select("*").eq("user_id", p.id).eq("is_private", false).order("created_at", { ascending: false })
       ]);
       
       // Group photos by album
@@ -92,18 +94,23 @@ function ProfileView() {
 
   // Log profile view
   useEffect(() => {
-    if (profile?.profile && id !== uid) {
-      logProfileView(id).catch(() => {});
+    if (profile?.profile && profile.profile.id !== uid) {
+      logProfileView(profile.profile.id).catch(() => {});
     }
-  }, [profile, id, uid]);
+  }, [profile, username, uid]);
 
   // Get connection status
   const conn = profile?.connections.find((c: any) => 
-    (c.requester === uid && c.addressee === id) || (c.requester === id && c.addressee === uid)
+    (c.requester === uid && c.addressee === profile.profile?.id) || (c.requester === profile.profile?.id && c.addressee === uid)
   );
   const isConnected = conn?.status === "accepted";
   const isPending = conn?.status === "pending";
   const isOwnRequest = conn?.requester === uid;
+
+  // Check if all photos are private (for blur logic)
+  const allPhotosPrivate = profile?.photos?.length > 0 && profile.photos.every((ph: any) => ph.is_private === true);
+  const hasPublicPhotos = profile?.photos?.some((ph: any) => ph.is_private === false);
+  const showBlur = !isConnected && allPhotosPrivate && profile.profile?.id !== uid;
 
   // Get photos
   const photoPaths = profile?.photos.map((p: any) => p.path) ?? [];
@@ -111,8 +118,7 @@ function ProfileView() {
 
   if (!me) return <div className="flex h-screen items-center justify-center">Loading…</div>;
   if (!profile?.profile) return <div className="p-8 text-center text-muted-foreground">Profile not found.</div>;
-  console.log("[ProfileView] id:", id, "uid:", uid, "redirect:", id === uid);
-  if (id === uid) return <Link to="/profile" replace />;
+  if (profile.profile.id === uid) return <Link to="/profile" replace />;
 
   const p = profile.profile;
   const photos = profile.photos;
@@ -126,7 +132,7 @@ function ProfileView() {
     setReporting(true);
     try {
       // Create report with enhanced fields
-      await reportProfile(id, reportDescription.trim(), {
+      await reportProfile(p.id, reportDescription.trim(), {
         reasonCategory: reportReason,
         proofText: reportDescription.trim(),
         proofFilePath: null, // TODO: upload proof file to storage
@@ -140,7 +146,7 @@ function ProfileView() {
       setReportProof(null);
       setReportProofPreview(null);
       if (fileRef.current) fileRef.current.value = "";
-      qc.invalidateQueries({ queryKey: ["profile-view", id] });
+      qc.invalidateQueries({ queryKey: ["profile-view", username] });
       qc.invalidateQueries({ queryKey: ["discover"] });
       qc.invalidateQueries({ queryKey: ["connections"] });
     } catch (err: any) {
@@ -154,7 +160,7 @@ function ProfileView() {
     const { error } = await supabase.from("photos").update({ album_id: albumId }).eq("id", photoId);
     if (error) { toast.error(error.message); return; }
     toast.success(albumId ? "Moved to album" : "Removed from album");
-    qc.invalidateQueries({ queryKey: ["profile-view", id] });
+    qc.invalidateQueries({ queryKey: ["profile-view", username] });
     qc.invalidateQueries({ queryKey: ["albums"] });
   };
 
@@ -163,7 +169,7 @@ function ProfileView() {
     const { error } = await supabase.from("photos").delete().eq("id", photoId);
     if (error) { toast.error(error.message); return; }
     toast.success("Photo deleted");
-    qc.invalidateQueries({ queryKey: ["profile-view", id] });
+    qc.invalidateQueries({ queryKey: ["profile-view", username] });
     qc.invalidateQueries({ queryKey: ["albums"] });
   };
 
@@ -171,7 +177,7 @@ function ProfileView() {
     const { error } = await supabase.from("photos").update({ view_timer: timer }).eq("id", photoId);
     if (error) { toast.error(error.message); return; }
     toast.success(`View timer set to ${timer}`);
-    qc.invalidateQueries({ queryKey: ["profile-view", id] });
+    qc.invalidateQueries({ queryKey: ["profile-view", username] });
     qc.invalidateQueries({ queryKey: ["albums"] });
   };
 
@@ -190,6 +196,28 @@ function ProfileView() {
     }
   };
 
+  const handlePrivateRequest = async () => {
+    if (!privateRequestMsg.trim()) {
+      toast.error("Please add a message");
+      return;
+    }
+    // Create a connection request with a note about private album access
+    const { error } = await supabase.from("connections").insert({ 
+      requester: uid, 
+      addressee: p.id 
+    });
+    if (error) { 
+      toast.error(error.message); 
+      return; 
+    }
+    // Send a notification/message about the private album request
+    toast.success("Request sent! They'll be notified.");
+    setShowPrivateRequest(false);
+    setPrivateRequestMsg("");
+    qc.invalidateQueries({ queryKey: ["profile-view", username] });
+    qc.invalidateQueries({ queryKey: ["discover"] });
+  };
+
   return (
     <>
       <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
@@ -205,15 +233,39 @@ function ProfileView() {
                     key={ph.id}
                     variant="ghost"
                     className="h-full w-full p-0"
-                    onClick={() => { setViewerPhotos(null); setPhotoViewerIndex(i); setPhotoViewerOpen(true); }}
+                    onClick={() => { 
+                      if (showBlur && i === 0) {
+                        setShowPrivateRequest(true);
+                        return;
+                      }
+                      setViewerPhotos(null); 
+                      setPhotoViewerIndex(i); 
+                      setPhotoViewerOpen(true); 
+                    }}
                   >
-                    <img
-                      src={urls[ph.path] || ""}
-                      alt={`${p.display_name}'s photo ${i + 1}`}
-                      className="h-full w-full object-cover"
-                      loading={i === 0 ? "eager" : "lazy"}
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    />
+                    <div className="relative h-full w-full">
+                      <img
+                        src={urls[ph.path] || ""}
+                        alt={`${p.display_name}'s photo ${i + 1}`}
+                        className={`h-full w-full object-cover ${showBlur && i === 0 ? "blur-[20px]" : ""}`}
+                        loading={i === 0 ? "eager" : "lazy"}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                      {showBlur && i === 0 && (
+                        <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
+                          <Lock className="h-12 w-12 text-white/90 mb-3" />
+                          <p className="text-white text-lg font-semibold">Private Photos</p>
+                          <p className="text-white/70 text-sm mt-1">This user's photos are private</p>
+                          <Button 
+                            variant="default" 
+                            className="mt-4 bg-primary text-primary-foreground"
+                            onClick={(e) => { e.stopPropagation(); setShowPrivateRequest(true); }}
+                          >
+                            <UserPlus className="h-4 w-4 mr-2" /> Request Access
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </Button>
                 ))}
               </div>
@@ -222,9 +274,7 @@ function ProfileView() {
                   {photos.map((_, i) => (
                     <span
                       key={i}
-                      className={`h-2 w-2 rounded-full transition-colors ${
-                        i === 0 ? "bg-white" : "bg-white/50"
-                      }`}
+                      className={`h-2 w-2 rounded-full transition-colors ${!showBlur && i === 0 ? "bg-white" : "bg-white/50"}`}
                     />
                   ))}
                 </div>
@@ -242,6 +292,12 @@ function ProfileView() {
               {p.verified && (
                 <span className="flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 text-sm font-medium shadow">
                   <BadgeCheck className="h-4 w-4 text-primary" /> Verified
+                </span>
+              )}
+              {/* Online status indicator */}
+              {p.is_online && (
+                <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-3 py-1 text-sm font-medium text-green-400">
+                  <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" /> Online
                 </span>
               )}
             </div>
@@ -328,9 +384,15 @@ function ProfileView() {
                 {ageOf(p.birthdate) !== null && <span className="text-2xl font-normal text-muted-foreground">, {ageOf(p.birthdate)}</span>}
                 {p.verified && <BadgeCheck className="h-6 w-6 text-primary" />}
               </h1>
-              <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
+              <div className="mt-1 flex flex-wrap gap-1.5 text-xs items-center">
                 {p.gender && <span className="rounded-full bg-accent px-2.5 py-1 text-accent-foreground">{p.gender}</span>}
                 {p.orientation && <span className="rounded-full bg-secondary px-2.5 py-1 text-secondary-foreground">{p.orientation}</span>}
+                {p.is_online && (
+                  <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-2.5 py-1 text-xs font-medium text-green-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                    Online
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -351,12 +413,17 @@ function ProfileView() {
                 <Button variant="secondary" disabled className="flex-1 min-w-[140px]"><Loader2 className="h-4 w-4 mr-2 animate-spin" />Waiting for response…</Button>
               ) : (
                 <>
-                  <Button variant="success" className="flex-1 min-w-[120px]" onClick={() => supabase.from("connections").update({ status: "accepted" }).eq("id", conn.id).then(() => { toast.success("Connected!"); qc.invalidateQueries({ queryKey: ["profile-view", id] }); })}><Check className="h-4 w-4 mr-2" />Accept</Button>
-                  <Button variant="outline" className="flex-1 min-w-[120px]" onClick={() => supabase.from("connections").update({ status: "declined" }).eq("id", conn.id).then(() => { qc.invalidateQueries({ queryKey: ["profile-view", id] }); })}><X className="h-4 w-4 mr-2" />Decline</Button>
+                  <Button variant="success" className="flex-1 min-w-[120px]" onClick={() => supabase.from("connections").update({ status: "accepted" }).eq("id", conn.id).then(() => { toast.success("Connected!"); qc.invalidateQueries({ queryKey: ["profile-view", username] }); })}><Check className="h-4 w-4 mr-2" />Accept</Button>
+                  <Button variant="outline" className="flex-1 min-w-[120px]" onClick={() => supabase.from("connections").update({ status: "declined" }).eq("id", conn.id).then(() => { qc.invalidateQueries({ queryKey: ["profile-view", username] }); })}><X className="h-4 w-4 mr-2" />Decline</Button>
                 </>
               )
             ) : (
-              <Button variant="hero" className="flex-1 min-w-[140px]" onClick={() => supabase.from("connections").insert({ requester: uid, addressee: id }).then(() => { toast.success("Connection request sent"); qc.invalidateQueries({ queryKey: ["profile-view", id] }); qc.invalidateQueries({ queryKey: ["discover"] }); })}><User className="h-4 w-4 mr-2" />Connect</Button>
+              <Button variant="hero" className="flex-1 min-w-[140px]" onClick={() => supabase.from("connections").insert({ requester: uid, addressee: p.id }).then(() => { toast.success("Connection request sent"); qc.invalidateQueries({ queryKey: ["profile-view", username] }); qc.invalidateQueries({ queryKey: ["discover"] }); })}><User className="h-4 w-4 mr-2" />Connect</Button>
+            )}
+            {p.id !== uid && !isConnected && allPhotosPrivate && (
+              <Button variant="outline" onClick={() => setShowPrivateRequest(true)}>
+                <Lock className="h-4 w-4 mr-2" /> Request Private Access
+              </Button>
             )}
             <Button variant="outline" size="icon" onClick={() => setReportOpen(true)} aria-label="Report user"><Flag className="h-4 w-4" /></Button>
           </div>
@@ -373,14 +440,33 @@ function ProfileView() {
                 key={album.id}
                 variant="ghost"
                 className="rounded-3xl border bg-card overflow-hidden shadow-soft h-auto p-0"
-                onClick={() => album.photos?.length > 0 && (setViewerPhotos(album.photos), setPhotoViewerIndex(0), setPhotoViewerOpen(true))}
+                onClick={() => {
+                  if (album.is_private && !isConnected && album.photos?.length > 0) {
+                    setShowPrivateRequest(true);
+                    return;
+                  }
+                  album.photos?.length > 0 && (setViewerPhotos(album.photos), setPhotoViewerIndex(0), setPhotoViewerOpen(true))
+                }}
                 disabled={!album.photos?.length}
               >
                 <div className="aspect-[4/5] bg-muted relative">
                   {album.photos?.length > 0 && album.photos[0]?.path && urls[album.photos[0].path] ? (
-                    <img src={urls[album.photos[0].path]} alt={album.name} className="h-full w-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    <img src={urls[album.photos[0].path]} alt={album.name} className={`h-full w-full object-cover ${album.is_private && !isConnected ? "blur-[20px]" : ""}`} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                   ) : (
                     <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">{album.name?.[0]}</div>
+                  )}
+                  {album.is_private && !isConnected && (
+                    <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
+                      <Lock className="h-8 w-8 text-white/90 mb-2" />
+                      <p className="text-white text-sm font-medium">Private Album</p>
+                      <Button 
+                        variant="default" 
+                        className="mt-3 bg-primary text-primary-foreground"
+                        onClick={(e) => { e.stopPropagation(); setShowPrivateRequest(true); }}
+                      >
+                        <UserPlus className="h-3 w-3 mr-1" /> Request Access
+                      </Button>
+                    </div>
                   )}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent p-4 text-stage-foreground">
                     <div className="font-semibold">{album.name}</div>
@@ -414,6 +500,35 @@ function ProfileView() {
       </div>
     </div>
 
+    {/* Private Access Request Dialog */}
+    <Dialog open={showPrivateRequest} onOpenChange={setShowPrivateRequest}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Request Private Access</DialogTitle>
+          <DialogDescription>
+            Send a connection request to {p.display_name} with a note asking to view their private photos/albums.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Message (Optional)</Label>
+            <Textarea
+              value={privateRequestMsg}
+              onChange={(e) => setPrivateRequestMsg(e.target.value)}
+              placeholder="Hi! I'd love to see your private photos..."
+              rows={3}
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 border-t pt-4">
+          <Button variant="outline" className="flex-1" onClick={() => { setShowPrivateRequest(false); setPrivateRequestMsg(""); }}>Cancel</Button>
+          <Button variant="hero" className="flex-1" onClick={handlePrivateRequest}>
+            <Send className="h-4 w-4 mr-2" /> Send Request
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
     <PhotoViewer
       isOpen={photoViewerOpen}
       onClose={() => { setPhotoViewerOpen(false); setViewerPhotos(null); }}
@@ -421,7 +536,7 @@ function ProfileView() {
       initialIndex={photoViewerIndex}
       urls={urls}
       currentUserId={uid}
-      isOwner={id === uid}
+      isOwner={p.id === uid}
       onMoveToAlbum={handleMoveToAlbum}
       onDeletePhoto={handleDeletePhoto}
       onSetTimer={handleSetTimer}

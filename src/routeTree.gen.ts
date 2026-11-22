@@ -24,7 +24,7 @@ import { Route as AuthenticatedRandomRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedReferralsRouteImport } from './routes/_authenticated/referrals'
 import { Route as AuthenticatedTermsRouteImport } from './routes/_authenticated/terms'
 import { Route as AuthenticatedChatIdRouteImport } from './routes/_authenticated/chat.$id'
-import { Route as AuthenticatedProfileIdRouteImport } from './routes/_authenticated/profile.$id'
+import { Route as AuthenticatedProfileUsernameRouteImport } from './routes/_authenticated/profile.$username'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -101,11 +101,12 @@ const AuthenticatedChatIdRoute = AuthenticatedChatIdRouteImport.update({
   path: '/chat/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedProfileIdRoute = AuthenticatedProfileIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AuthenticatedProfileRoute,
-} as any)
+const AuthenticatedProfileUsernameRoute =
+  AuthenticatedProfileUsernameRouteImport.update({
+    id: '/$username',
+    path: '/$username',
+    getParentRoute: () => AuthenticatedProfileRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -122,7 +123,7 @@ export interface FileRoutesByFullPath {
   '/referrals': typeof AuthenticatedReferralsRoute
   '/terms': typeof AuthenticatedTermsRoute
   '/chat/$id': typeof AuthenticatedChatIdRoute
-  '/profile/$id': typeof AuthenticatedProfileIdRoute
+  '/profile/$username': typeof AuthenticatedProfileUsernameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -139,7 +140,7 @@ export interface FileRoutesByTo {
   '/referrals': typeof AuthenticatedReferralsRoute
   '/terms': typeof AuthenticatedTermsRoute
   '/chat/$id': typeof AuthenticatedChatIdRoute
-  '/profile/$id': typeof AuthenticatedProfileIdRoute
+  '/profile/$username': typeof AuthenticatedProfileUsernameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -158,7 +159,7 @@ export interface FileRoutesById {
   '/_authenticated/referrals': typeof AuthenticatedReferralsRoute
   '/_authenticated/terms': typeof AuthenticatedTermsRoute
   '/_authenticated/chat/$id': typeof AuthenticatedChatIdRoute
-  '/_authenticated/profile/$id': typeof AuthenticatedProfileIdRoute
+  '/_authenticated/profile/$username': typeof AuthenticatedProfileUsernameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -177,7 +178,7 @@ export interface FileRouteTypes {
     | '/referrals'
     | '/terms'
     | '/chat/$id'
-    | '/profile/$id'
+    | '/profile/$username'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -194,7 +195,7 @@ export interface FileRouteTypes {
     | '/referrals'
     | '/terms'
     | '/chat/$id'
-    | '/profile/$id'
+    | '/profile/$username'
   id:
     | '__root__'
     | '/'
@@ -212,7 +213,7 @@ export interface FileRouteTypes {
     | '/_authenticated/referrals'
     | '/_authenticated/terms'
     | '/_authenticated/chat/$id'
-    | '/_authenticated/profile/$id'
+    | '/_authenticated/profile/$username'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -329,22 +330,22 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/profile/$id': {
-      id: '/_authenticated/profile/$id'
-      path: '/$id'
-      fullPath: '/profile/$id'
-      preLoaderRoute: typeof AuthenticatedProfileIdRouteImport
+    '/_authenticated/profile/$username': {
+      id: '/_authenticated/profile/$username'
+      path: '/$username'
+      fullPath: '/profile/$username'
+      preLoaderRoute: typeof AuthenticatedProfileUsernameRouteImport
       parentRoute: typeof AuthenticatedProfileRoute
     }
   }
 }
 
 interface AuthenticatedProfileRouteChildren {
-  AuthenticatedProfileIdRoute: typeof AuthenticatedProfileIdRoute
+  AuthenticatedProfileUsernameRoute: typeof AuthenticatedProfileUsernameRoute
 }
 
 const AuthenticatedProfileRouteChildren: AuthenticatedProfileRouteChildren = {
-  AuthenticatedProfileIdRoute: AuthenticatedProfileIdRoute,
+  AuthenticatedProfileUsernameRoute: AuthenticatedProfileUsernameRoute,
 }
 
 const AuthenticatedProfileRouteWithChildren =

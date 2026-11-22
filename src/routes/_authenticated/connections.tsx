@@ -24,7 +24,7 @@ function Connections() {
       const { data: conns } = await supabase.from("connections").select("*").order("created_at", { ascending: false });
       const ids = (conns ?? []).map((c) => (c.requester === uid ? c.addressee : c.requester));
       const [{ data: profiles }, { data: photos }] = ids.length
-        ? await Promise.all([supabase.from("profiles").select("*").in("id", ids), supabase.from("photos").select("user_id,path,position").in("user_id", ids).order("position")])
+        ? await Promise.all([supabase.from("profiles").select("id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at").in("id", ids), supabase.from("photos").select("user_id,path,position").in("user_id", ids).order("position")])
         : [{ data: [] as Profile[] }, { data: [] as { user_id: string; path: string }[] }];
       const first: Record<string, string> = {};
       photos?.forEach((p) => { if (!first[p.user_id]) first[p.user_id] = p.path; });
@@ -55,7 +55,7 @@ function Connections() {
   const grid = (items: typeof all, action: (d: (typeof all)[number]) => ReactNode, empty: string) =>
     items.length ? (
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((d) => <ProfileCard key={d.c.id} p={d.p} photo={d.photo ? urls[d.photo] : undefined} action={action(d)} to="/profile/$id" toParams={{ id: d.p.id }} />)}
+        {items.map((d) => <ProfileCard key={d.c.id} p={d.p} photo={d.photo ? urls[d.photo] : undefined} action={action(d)} to="/profile/$username" toParams={{ username: d.p.username ?? d.p.id }} />)}
       </div>
     ) : <p className="py-16 text-center text-muted-foreground">{empty}</p>;
 

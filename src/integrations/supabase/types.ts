@@ -303,15 +303,16 @@ export type Database = {
           city: string | null
           country: string | null
           created_at: string
-          country: string | null
           display_name: string | null
           email: string | null
           gender: string | null
           id: string
+          is_online: boolean
           last_seen_at: string | null
           latitude: number | null
           longitude: number | null
           orientation: string | null
+          username: string | null
           verified: boolean
         }
         Insert: {
@@ -325,10 +326,12 @@ export type Database = {
           email?: string | null
           gender?: string | null
           id: string
+          is_online?: boolean
           last_seen_at?: string | null
           latitude?: number | null
           longitude?: number | null
           orientation?: string | null
+          username?: string | null
           verified?: boolean
         }
         Update: {
@@ -342,10 +345,12 @@ export type Database = {
           email?: string | null
           gender?: string | null
           id?: string
+          is_online?: boolean
           last_seen_at?: string | null
           latitude?: number | null
           longitude?: number | null
           orientation?: string | null
+          username?: string | null
           verified?: boolean
         }
         Relationships: []

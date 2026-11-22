@@ -32,7 +32,7 @@ function Dashboard() {
     queryFn: async () => {
       const [{ data: conns }, { data: people }, { data: photos }] = await Promise.all([
         supabase.from("connections").select("*"),
-        supabase.from("profiles").select("*").eq("banned", false).neq("id", uid!).not("gender", "is", null).order("created_at", { ascending: false }).limit(6),
+        supabase.from("profiles").select("id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at,created_at").eq("banned", false).neq("id", uid!).not("gender", "is", null).order("created_at", { ascending: false }).limit(6),
         supabase.from("photos").select("user_id,path,position").order("position"),
       ]);
       const first: Record<string, string> = {};
@@ -155,7 +155,7 @@ function Dashboard() {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {data.people.map((pp) => {
               const ph = data.first[pp.id];
-              return <ProfileCard key={pp.id} p={pp} photo={ph ? urls[ph] : undefined} action={<Button asChild variant="outline" className="w-full"><Link to="/discover">View in Discover</Link></Button>} to="/profile/$id" toParams={{ id: pp.id }} />;
+              return <ProfileCard key={pp.id} p={pp} photo={ph ? urls[ph] : undefined} action={<Button asChild variant="outline" className="w-full"><Link to="/discover">View in Discover</Link></Button>} to="/profile/$username" toParams={{ username: pp.username ?? pp.id }} />;
             })}
           </div>
         ) : <p className="text-muted-foreground">No one else has joined yet — invite your friends!</p>}

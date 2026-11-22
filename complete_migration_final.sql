@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email text,
   display_name text,
+  username text UNIQUE,
   gender text,
   orientation text,
   birthdate date,
@@ -24,8 +25,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   created_at timestamptz NOT NULL DEFAULT now(),
   last_seen_at timestamptz,
   latitude double precision,
-  longitude double precision
+  longitude double precision,
+  is_online boolean NOT NULL DEFAULT false
 );
+CREATE INDEX IF NOT EXISTS profiles_username_idx ON public.profiles(username);
 
 -- 3. user_roles
 CREATE TABLE IF NOT EXISTS public.user_roles (
@@ -65,9 +68,23 @@ USING (user_id = auth.uid() OR public.has_role(auth.uid(),'admin'));
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
+DECLARE
+  base_username text;
+  final_username text;
+  counter int := 1;
 BEGIN
-  INSERT INTO public.profiles (id, display_name)
-  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', SPLIT_PART(NEW.email,'@',1)));
+  base_username := COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', SPLIT_PART(NEW.email,'@',1));
+  base_username := lower(regexp_replace(base_username, '[^a-z0-9_]', '', 'g'));
+  base_username := substring(base_username from 1 for 30);
+  
+  final_username := base_username;
+  WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = final_username) LOOP
+    final_username := base_username || counter;
+    counter := counter + 1;
+  END LOOP;
+  
+  INSERT INTO public.profiles (id, display_name, username)
+  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', SPLIT_PART(NEW.email,'@',1)), final_username);
   INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, 'user');
   IF NOT EXISTS (SELECT 1 FROM public.user_roles WHERE role = 'admin') THEN
     INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, 'admin');
@@ -380,4 +397,19 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'reports') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.reports;
   END IF;
+
+-- 25. Trigger to auto-update last_seen_at on profile update
+CREATE OR REPLACE FUNCTION public.update_last_seen_at()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  NEW.last_seen_at = now();
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trigger_update_last_seen_at ON public.profiles;
+CREATE TRIGGER trigger_update_last_seen_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_last_seen_at();
+
 END $$;

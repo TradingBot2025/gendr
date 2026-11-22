@@ -1,10 +1,10 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
 import { toast } from "sonner";
-import { Bell, X, MessageCircle, UserPlus, ExternalLink } from "lucide-react";
+import { Bell, X, MessageCircle, UserPlus, ExternalLink, Activity } from "lucide-react";
 
 interface Notification {
   id: string;
@@ -33,7 +33,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const { data: me } = useMe();
   const uid = me?.user.id;
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [channels, setChannels] = useState<any[]>([]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -49,6 +48,48 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
+  // Online status tracking
+  const updateOnlineStatus = useCallback(async (isOnline: boolean) => {
+    if (!uid) return;
+    await supabase.from("profiles").update({ 
+      is_online: isOnline,
+      last_seen_at: new Date().toISOString()
+    }).eq("id", uid);
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid) return;
+
+    // Set online on mount
+    updateOnlineStatus(true);
+
+    // Update last_seen_at periodically
+    const interval = setInterval(() => {
+      updateOnlineStatus(true);
+    }, 30000);
+
+    // Set offline on unmount
+    const handleBeforeUnload = () => {
+      updateOnlineStatus(false);
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        updateOnlineStatus(false);
+      } else {
+        updateOnlineStatus(true);
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      updateOnlineStatus(false);
+    };
+  }, [uid, updateOnlineStatus]);
+
+  // Real-time notifications
   useEffect(() => {
     if (!uid) return;
 
@@ -64,9 +105,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         },
         async (payload) => {
           const newMsg = payload.new as any;
-          if (newMsg.sender === uid) return; // Don't notify for own messages
+          if (newMsg.sender === uid) return;
 
-          // Get sender info
           const { data: sender } = await supabase
             .from("profiles")
             .select("display_name, photos(path)")
@@ -89,7 +129,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
               avatar: signedUrl?.signedUrl,
               senderName: sender?.display_name,
             },
-            ...prev.slice(0, 49), // Keep last 50
+            ...prev.slice(0, 49),
           ]);
 
           toast.success(`${sender?.display_name ?? "Someone"}: ${newMsg.body ?? "📎 Attachment"}`, {
@@ -179,8 +219,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
 
-    setChannels([messageChannel, connectionChannel]);
-
     return () => {
       messageChannel.unsubscribe();
       connectionChannel.unsubscribe();
@@ -205,10 +243,8 @@ function NotificationBell() {
   const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } = useNotifications();
   const [open, setOpen] = useState(false);
 
-  if (notifications.length === 0 && unreadCount === 0) return null;
-
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-4 right-4 z-50 md:bottom-20 md:right-6">
       <div className="relative">
         <button
           onClick={() => setOpen(!open)}
@@ -226,7 +262,10 @@ function NotificationBell() {
         {open && (
           <div className="absolute bottom-14 right-0 w-80 md:w-96 bg-card border rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
             <div className="flex items-center justify-between p-3 border-b">
-              <h3 className="font-semibold">Notifications</h3>
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-green-500" />
+                <h3 className="font-semibold">Notifications</h3>
+              </div>
               <div className="flex items-center gap-2">
                 {unreadCount > 0 && (
                   <button
