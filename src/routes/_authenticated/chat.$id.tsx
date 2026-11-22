@@ -111,6 +111,15 @@ function Chat() {
     return () => stopRingingSound();
   }, [call.status, audioEnabled]);
 
+  if (info === null) return (
+    <div className="p-8 text-center"><p className="text-muted-foreground">This chat isn't available.</p><Button asChild className="mt-4"><Link to="/connections">Back to matches</Link></Button></div>
+  );
+  if (!info || !uid) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
+  const name = info.peer?.display_name ?? "Match";
+
+  const now = Date.now();
+  const expired = (msgs ?? []).filter((m) => m.expires_at && new Date(m.expires_at).getTime() < now);
+
   // Auto-increment view count for limited-view images when they come into view (for recipient)
   useEffect(() => {
     if (!msgs?.length) return;
@@ -130,15 +139,6 @@ function Chat() {
       }
     });
   }, [msgs, uid, now]);
-
-  if (info === null) return (
-    <div className="p-8 text-center"><p className="text-muted-foreground">This chat isn't available.</p><Button asChild className="mt-4"><Link to="/connections">Back to matches</Link></Button></div>
-  );
-  if (!info || !uid) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
-  const name = info.peer?.display_name ?? "Match";
-
-  const now = Date.now();
-  const expired = (msgs ?? []).filter((m) => m.expires_at && new Date(m.expires_at).getTime() < now);
 
   const sendMsg = async (fields: { body?: string; attachment_path?: string; attachment_type?: string; attachment_name?: string; max_views?: number | null }) => {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
