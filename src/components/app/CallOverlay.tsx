@@ -15,7 +15,17 @@ export function MediaView({
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
-    if (ref.current) ref.current.srcObject = stream;
+    const v = ref.current;
+    if (!v) return;
+    if (v.srcObject !== stream) v.srcObject = stream;
+    if (stream) {
+      // Autoplay can be blocked (especially mobile with audio). Try to play, and
+      // if it fails, mute and retry so at least the video renders.
+      v.play().catch(() => {
+        v.muted = true;
+        v.play().catch(() => {});
+      });
+    }
   }, [stream]);
   return <video ref={ref} autoPlay playsInline muted={muted} className={className} />;
 }
@@ -95,7 +105,11 @@ export function CallOverlay() {
           <MediaView stream={c.remote} className="h-full w-full object-cover" />
         ) : (
           <>
-            <MediaView stream={c.remote} className="hidden" />
+            {/* Keep the element rendered (not display:none) so audio plays on mobile. */}
+            <MediaView
+              stream={c.remote}
+              className="pointer-events-none absolute h-px w-px opacity-0"
+            />
             <div className="flex h-full flex-col items-center justify-center gap-4">
               <div className="flex h-28 w-28 items-center justify-center rounded-full bg-gradient-primary text-4xl font-bold">
                 {c.peerName.slice(0, 1).toUpperCase()}

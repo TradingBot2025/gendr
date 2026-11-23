@@ -106,13 +106,7 @@ const REPORT_REASONS = [
   { value: "other", label: "Other", description: "Something not listed here" },
 ];
 
-const DISAPPEAR_OPTIONS = [
-  { value: 10, label: "10 seconds" },
-  { value: 60, label: "1 minute" },
-  { value: 3600, label: "1 hour" },
-  { value: 86400, label: "24 hours" },
-  { value: 604800, label: "7 days" },
-];
+const DISAPPEAR_OPTIONS = [{ value: 86400, label: "24 hours" }];
 
 function formatDisappear(seconds: number | null | undefined): string | null {
   if (!seconds || seconds <= 0) return null;
@@ -160,7 +154,6 @@ function Chat() {
   const [expNotice, setExpNotice] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
-  const [photoTimer, setPhotoTimer] = useState<"normal" | "10s" | "15s">("normal");
   const [maxViews, setMaxViews] = useState<number | null>(null); // null = unlimited, 1 = one-time, etc.
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showAlbumPicker, setShowAlbumPicker] = useState(false);
@@ -352,14 +345,8 @@ function Chat() {
     attachment_name?: string;
     max_views?: number | null;
   }) => {
-    let expiresAt: string;
-    if (photoTimer === "10s") {
-      expiresAt = new Date(Date.now() + 10 * 1000).toISOString();
-    } else if (photoTimer === "15s") {
-      expiresAt = new Date(Date.now() + 15 * 1000).toISOString();
-    } else {
-      expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    }
+    // All messages follow one rule: disappear after 24 hours.
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const { error } = await supabase.from("messages").insert({
       connection_id: id,
       sender: uid,
@@ -775,17 +762,9 @@ function Chat() {
                 hidden
                 onChange={(e) => attach(e.target.files?.[0])}
               />
-              <Label>Disappearing photo timer</Label>
-              <Select value={photoTimer} onValueChange={setPhotoTimer}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select timer" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="normal">Normal (24 hours)</SelectItem>
-                  <SelectItem value="10s">10 seconds</SelectItem>
-                  <SelectItem value="15s">15 seconds</SelectItem>
-                </SelectContent>
-              </Select>
+              <p className="text-xs text-muted-foreground">
+                Photos and messages disappear after 24 hours.
+              </p>
             </div>
             <Separator />
             <Button
@@ -924,21 +903,6 @@ function Chat() {
               {maxViews === 1 ? "1️⃣ View" : `${maxViews} views`}
             </span>
           )}
-          <label className="text-[10px] text-muted-foreground uppercase tracking-wider">
-            {photoTimer}
-          </label>
-          <Button
-            size="icon"
-            variant="outline"
-            onClick={() =>
-              setPhotoTimer(
-                photoTimer === "normal" ? "10s" : photoTimer === "10s" ? "15s" : "normal",
-              )
-            }
-            aria-label="Disappearing photo timer"
-          >
-            <Clock className="h-4 w-4" />
-          </Button>
         </div>
         <Input
           value={text}

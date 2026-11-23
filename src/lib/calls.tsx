@@ -145,11 +145,35 @@ export function CallProvider({
       conn.onicecandidate = (e) => {
         if (e.candidate) void send(peer, { type: "ice", candidate: e.candidate.toJSON() });
       };
+      // Accumulate remote tracks into a single MediaStream. Some browsers (notably
+      // mobile Safari ↔ desktop Chrome) don't populate e.streams[0], so relying on it
+      // leaves the remote stream empty and no video/audio shows. Building the stream
+      // from tracks works across all browsers.
+      const remoteStream = new MediaStream();
       conn.ontrack = (e) => {
-        if (e.streams[0]) setRemote(e.streams[0]);
+        remoteStream.addTrack(e.track);
+        setRemote(remoteStream);
       };
+      let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
       conn.onconnectionstatechange = () => {
-        if (conn.connectionState === "failed" || conn.connectionState === "disconnected") {
+        if (disconnectTimer) {
+          clearTimeout(disconnectTimer);
+          disconnectTimer = null;
+        }
+        if (conn.connectionState === "connected") {
+          // Recovered from a temporary drop — keep the call alive.
+          return;
+        }
+        if (conn.connectionState === "disconnected") {
+          // Mobile networks briefly drop; give it 8s to recover before ending.
+          disconnectTimer = setTimeout(() => {
+            if (pc.current === conn && conn.connectionState !== "connected") {
+              toast("Call ended");
+              cleanup();
+            }
+          }, 8000);
+        }
+        if (conn.connectionState === "failed") {
           if (pc.current === conn) {
             toast("Call ended");
             cleanup();

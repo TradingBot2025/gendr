@@ -7,9 +7,7 @@ import {
   Flag,
   MapPin,
   MessageCircle,
-  Shield,
   User,
-  Heart,
   X,
   Check,
   Loader2,
@@ -132,7 +130,7 @@ function ProfileView() {
   const [albumRequests, setAlbumRequests] = useState<
     Record<string, { status: string; id: string }>
   >({});
-  const [tab, setTab] = useState<"info" | "photos" | "review">("info");
+  const [tab, setTab] = useState<"info" | "photos">("info");
 
   const {
     data: profile,
@@ -414,252 +412,183 @@ function ProfileView() {
   return (
     <>
       <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as "info" | "photos" | "review")}>
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as "info" | "photos")}>
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="info">Info</TabsTrigger>
             <TabsTrigger value="photos">Photos</TabsTrigger>
-            <TabsTrigger value="review">Review</TabsTrigger>
           </TabsList>
 
           <TabsContent value="info" className="mt-4 space-y-6">
-            {/* Profile Header */}
-            <div className="rounded-3xl border bg-card overflow-hidden shadow-soft">
-              {/* Photo Carousel */}
-              <div className="relative aspect-[4/5] bg-muted">
-                {hasMainPhotos && (
-                  <div>
-                    <div className="h-full w-full overflow-hidden">
-                      {mainPhotos.map(
-                        (ph: { id: string; path: string; is_private: boolean }, i: number) => (
-                          <Button
-                            key={ph.id}
-                            variant="ghost"
-                            className="h-full w-full p-0"
-                            onClick={() => {
-                              if (showMainBlur && i === 0) {
-                                // Find the album for this photo and open request dialog
-                                const album = albums.find((a) =>
-                                  a.photos?.some((ap) => ap.path === ph.path),
-                                );
-                                if (album) {
-                                  // Check request status
-                                  const req = albumRequests[album.id];
-                                  if (req?.status === "approved") {
-                                    setViewerPhotos(null);
-                                    setPhotoViewerIndex(i);
-                                    setPhotoViewerOpen(true);
-                                  } else {
-                                    // Could open album-specific request
-                                  }
-                                }
-                                return;
-                              }
-                              setViewerPhotos(null);
-                              setPhotoViewerIndex(i);
-                              setPhotoViewerOpen(true);
-                            }}
-                          >
-                            <div className="relative h-full w-full">
-                              <img
-                                src={urls[ph.path] || ""}
-                                alt={`${p.display_name}'s photo ${i + 1}`}
-                                className={`h-full w-full object-cover ${showMainBlur && i === 0 ? "blur-[20px]" : ""}`}
-                                loading={i === 0 ? "eager" : "lazy"}
-                                onError={(e) => {
-                                  e.currentTarget.style.display = "none";
-                                }}
-                              />
-                              {showMainBlur && i === 0 && (
-                                <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
-                                  <Lock className="h-12 w-12 text-white/90 mb-3" />
-                                  <p className="text-white text-lg font-semibold">Private Photos</p>
-                                  <p className="text-white/70 text-sm mt-1">
-                                    This user's photos are private
-                                  </p>
-                                  <Button
-                                    variant="default"
-                                    className="mt-4 bg-primary text-primary-foreground"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      // Find album for this photo
-                                      const album = albums.find((a) =>
-                                        a.photos?.some((ap) => ap.path === ph.path),
-                                      );
-                                      if (album) handleRequestAlbumAccess(album.id);
-                                    }}
-                                  >
-                                    <UserPlus className="h-4 w-4 mr-2" /> Request Access
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          </Button>
-                        ),
-                      )}
+            {/* Compact Profile Header */}
+            <div className="flex items-start gap-4 rounded-3xl border bg-card p-4 shadow-soft">
+              <Button
+                variant="ghost"
+                className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl p-0"
+                onClick={() => {
+                  if (hasMainPhotos) {
+                    setViewerPhotos(null);
+                    setPhotoViewerIndex(0);
+                    setPhotoViewerOpen(true);
+                  }
+                }}
+                aria-label="View photo"
+              >
+                {hasMainPhotos && mainPhotos[0] ? (
+                  urls[mainPhotos[0].path] ? (
+                    <img
+                      src={urls[mainPhotos[0].path]}
+                      alt={p.display_name}
+                      className={`h-full w-full object-cover ${showMainBlur ? "blur-[12px]" : ""}`}
+                      loading="eager"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center font-display text-2xl text-muted-foreground">
+                      {p.display_name?.[0]}
                     </div>
-                    {mainPhotos.length > 1 && (
-                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
-                        {mainPhotos.map((_, i) => (
-                          <span
-                            key={i}
-                            className={`h-2 w-2 rounded-full transition-colors ${!showMainBlur && i === 0 ? "bg-white" : "bg-white/50"}`}
-                          />
-                        ))}
-                      </div>
-                    )}
+                  )
+                ) : showFallbackBlur && fallbackMainPhoto ? (
+                  <div className="flex h-full w-full items-center justify-center bg-muted">
+                    <Lock className="h-6 w-6 text-muted-foreground" />
                   </div>
-                )}
-                {!hasMainPhotos && showFallbackBlur && fallbackMainPhoto && (
-                  <Button
-                    variant="ghost"
-                    className="h-full w-full p-0"
-                    onClick={() => handleRequestAlbumAccess(privateAlbumWithPhotos!.id)}
-                  >
-                    <div className="relative h-full w-full">
-                      {fallbackMainPhoto.preview_path &&
-                      previewUrls[fallbackMainPhoto.preview_path] ? (
-                        <img
-                          src={previewUrls[fallbackMainPhoto.preview_path]}
-                          alt={`${p.display_name}'s private photo`}
-                          className="h-full w-full object-cover blur-[20px]"
-                          loading="eager"
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                          }}
-                        />
-                      ) : null}
-                      <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
-                        <Lock className="h-12 w-12 text-white/90 mb-3" />
-                        <p className="text-white text-lg font-semibold">Private Photos</p>
-                        <p className="text-white/70 text-sm mt-1">This user's photos are private</p>
-                        <Button
-                          variant="default"
-                          className="mt-4 bg-primary text-primary-foreground"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRequestAlbumAccess(privateAlbumWithPhotos!.id);
-                          }}
-                        >
-                          <UserPlus className="h-4 w-4 mr-2" /> Request Access
-                        </Button>
-                      </div>
-                    </div>
-                  </Button>
-                )}
-                {!hasMainPhotos && (!showFallbackBlur || !fallbackMainPhoto) && (
-                  <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center font-display text-2xl text-muted-foreground">
                     {p.display_name?.[0]}
                   </div>
                 )}
-              </div>
+              </Button>
 
-              {/* Badges */}
-              <div className="flex justify-between p-4 border-b">
-                <div className="flex gap-2">
-                  {p.verified && (
-                    <span className="flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 text-sm font-medium shadow">
-                      <BadgeCheck className="h-4 w-4 text-primary" /> Verified
-                    </span>
-                  )}
-                  {p.is_online && (
-                    <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-3 py-1 text-sm font-medium text-green-400">
-                      <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" /> Online
-                    </span>
-                  )}
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 rounded-full bg-white/90 shadow-lg"
-                      aria-label="More options"
-                    >
-                      <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuItem onClick={() => setReportOpen(true)}>
-                      <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {!conn && (
-                      <DropdownMenuItem
-                        onClick={() =>
-                          supabase
-                            .from("connections")
-                            .insert({ requester: uid, addressee: p.id })
-                            .then(({ error }) => {
-                              if (error) {
-                                toast.error(error.message);
-                                return;
-                              }
-                              toast.success("Connection request sent");
-                              qc.invalidateQueries({ queryKey: ["discover"] });
-                              qc.invalidateQueries({ queryKey: ["profile-view", username] });
-                            })
-                        }
-                      >
-                        <UserPlus className="h-4 w-4 mr-2" /> Connect
-                      </DropdownMenuItem>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h1 className="flex items-center gap-2 text-2xl font-bold">
+                      {p.display_name}
+                      {ageOf(p.birthdate) !== null && (
+                        <span className="text-lg font-normal text-muted-foreground">
+                          , {ageOf(p.birthdate)}
+                        </span>
+                      )}
+                      {p.verified && <BadgeCheck className="h-5 w-5 text-primary" />}
+                    </h1>
+                    <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
+                      {p.gender && (
+                        <span className="rounded-full bg-accent px-2 py-0.5 text-accent-foreground">
+                          {p.gender}
+                        </span>
+                      )}
+                      {p.orientation && (
+                        <span className="rounded-full bg-secondary px-2 py-0.5 text-secondary-foreground">
+                          {p.orientation}
+                        </span>
+                      )}
+                      {p.is_online && (
+                        <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />{" "}
+                          Online
+                        </span>
+                      )}
+                    </div>
+                    {p.city && (
+                      <div className="mt-2 flex items-center gap-1 text-sm text-muted-foreground">
+                        <MapPin className="h-3.5 w-3.5" />
+                        {p.city}
+                        {p.country && `, ${p.country}`}
+                      </div>
                     )}
-                    {isPending && isOwnRequest && (
-                      <DropdownMenuItem
-                        onClick={() =>
-                          supabase
-                            .from("connections")
-                            .delete()
-                            .eq("id", conn!.id)
-                            .then(() => {
-                              toast.success("Request cancelled");
-                              qc.invalidateQueries({ queryKey: ["profile-view", username] });
-                              qc.invalidateQueries({ queryKey: ["discover"] });
-                            })
-                        }
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-full"
+                        aria-label="More options"
                       >
-                        <X className="h-4 w-4 mr-2 text-muted-foreground" /> Cancel request
+                        <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuItem onClick={() => setReportOpen(true)}>
+                        <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
                       </DropdownMenuItem>
-                    )}
-                    {isPending && !isOwnRequest && (
-                      <>
+                      <DropdownMenuSeparator />
+                      {!conn && (
                         <DropdownMenuItem
                           onClick={() =>
                             supabase
                               .from("connections")
-                              .update({ status: "accepted" })
-                              .eq("id", conn!.id)
-                              .then(() => {
-                                toast.success("Connected!");
+                              .insert({ requester: uid, addressee: p.id })
+                              .then(({ error }) => {
+                                if (error) {
+                                  toast.error(error.message);
+                                  return;
+                                }
+                                toast.success("Connection request sent");
+                                qc.invalidateQueries({ queryKey: ["discover"] });
                                 qc.invalidateQueries({ queryKey: ["profile-view", username] });
                               })
                           }
                         >
-                          <Check className="h-4 w-4 mr-2 text-green-500" /> Accept
+                          <UserPlus className="h-4 w-4 mr-2" /> Connect
                         </DropdownMenuItem>
+                      )}
+                      {isPending && isOwnRequest && (
                         <DropdownMenuItem
                           onClick={() =>
                             supabase
                               .from("connections")
-                              .update({ status: "declined" })
+                              .delete()
                               .eq("id", conn!.id)
-                              .then(() =>
-                                qc.invalidateQueries({ queryKey: ["profile-view", username] }),
-                              )
+                              .then(() => {
+                                toast.success("Request cancelled");
+                                qc.invalidateQueries({ queryKey: ["profile-view", username] });
+                                qc.invalidateQueries({ queryKey: ["discover"] });
+                              })
                           }
                         >
-                          <X className="h-4 w-4 mr-2 text-red-500" /> Decline
+                          <X className="h-4 w-4 mr-2 text-muted-foreground" /> Cancel request
                         </DropdownMenuItem>
-                      </>
-                    )}
-                    {isConnected && (
-                      <DropdownMenuItem asChild>
-                        <Link to="/chat/$id" params={{ id: conn!.id }}>
-                          <MessageCircle className="h-4 w-4 mr-2" /> Chat
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      )}
+                      {isPending && !isOwnRequest && (
+                        <>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              supabase
+                                .from("connections")
+                                .update({ status: "accepted" })
+                                .eq("id", conn!.id)
+                                .then(() => {
+                                  toast.success("Connected!");
+                                  qc.invalidateQueries({ queryKey: ["profile-view", username] });
+                                })
+                            }
+                          >
+                            <Check className="h-4 w-4 mr-2 text-green-500" /> Accept
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              supabase
+                                .from("connections")
+                                .update({ status: "declined" })
+                                .eq("id", conn!.id)
+                                .then(() =>
+                                  qc.invalidateQueries({ queryKey: ["profile-view", username] }),
+                                )
+                            }
+                          >
+                            <X className="h-4 w-4 mr-2 text-red-500" /> Decline
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      {isConnected && (
+                        <DropdownMenuItem asChild>
+                          <Link to="/chat/$id" params={{ id: conn!.id }}>
+                            <MessageCircle className="h-4 w-4 mr-2" /> Chat
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
             </div>
 
@@ -716,7 +645,12 @@ function ProfileView() {
               {p.bio && <p className="text-muted-foreground">{p.bio}</p>}
 
               {/* Extended details */}
-              {(p.height || p.weight || p.education || p.children || p.marital_status) && (
+              {(p.height ||
+                p.weight ||
+                p.education ||
+                p.children ||
+                p.marital_status ||
+                p.looking_for) && (
                 <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/40 p-4 text-sm sm:grid-cols-3">
                   {p.height && (
                     <div>
@@ -746,6 +680,12 @@ function ProfileView() {
                     <div>
                       <div className="text-xs text-muted-foreground">Status</div>
                       <div className="font-medium">{p.marital_status}</div>
+                    </div>
+                  )}
+                  {p.looking_for && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Looking for</div>
+                      <div className="font-medium">{p.looking_for}</div>
                     </div>
                   )}
                 </div>
@@ -990,37 +930,6 @@ function ProfileView() {
                 </div>
               </div>
             )}
-          </TabsContent>
-
-          <TabsContent value="review" className="mt-4 space-y-6">
-            {/* Additional Info Cards */}
-            <div className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-3xl border bg-card p-6 shadow-soft">
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <Shield className="h-5 w-5" /> Safety
-                  </h3>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Only accepted matches can message you</p>
-                    <p>• Private photos are visible only to approved viewers</p>
-                    <p>• Chat messages can have disappearing timers</p>
-                    <p>• Report inappropriate behavior anytime</p>
-                  </div>
-                </div>
-                <div className="rounded-3xl border bg-card p-6 shadow-soft">
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <Heart className="h-5 w-5" /> Looking for
-                  </h3>
-                  {p.looking_for ? (
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                      {p.looking_for}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Not specified yet</p>
-                  )}
-                </div>
-              </div>
-            </div>
           </TabsContent>
         </Tabs>
 
