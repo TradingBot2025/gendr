@@ -1,8 +1,20 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BadgeCheck, Camera, ImagePlus, Star, Trash2, Lock, Clock, Plus } from "lucide-react";
+import {
+  BadgeCheck,
+  Camera,
+  ImagePlus,
+  Star,
+  Trash2,
+  Lock,
+  Clock,
+  Plus,
+  MapPin,
+  Pencil,
+  Eye,
+} from "lucide-react";
 import { ProfileCard } from "@/components/app/ProfileCard";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -14,6 +26,7 @@ import {
   useMe,
   useSigned,
   usePhotoAlbums,
+  ageOf,
   type PhotoAlbum,
 } from "@/lib/data";
 import { uploadBlurredPreview } from "@/lib/photo-previews";
@@ -62,6 +75,7 @@ function ProfilePage() {
   });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [albumOpen, setAlbumOpen] = useState(false);
   const [newAlbum, setNewAlbum] = useState("");
@@ -122,6 +136,106 @@ function ProfilePage() {
   if (!me) return null;
   const refresh = () => qc.invalidateQueries({ queryKey: ["me"] });
   const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  // View mode — how other members see this profile. Shown first; "Edit profile"
+  // switches to the editor below.
+  if (!editing) {
+    const pr = me.profile;
+    const age = ageOf(pr?.birthdate ?? null);
+    const mainPhotos = photos.filter((ph) => !ph.album_id);
+    return (
+      <div className="mx-auto max-w-2xl space-y-6 p-4 md:p-8">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">My profile</h1>
+          <Button variant="hero" onClick={() => setEditing(true)}>
+            <Pencil className="mr-2 h-4 w-4" /> Edit profile
+          </Button>
+        </div>
+
+        <div className="overflow-hidden rounded-3xl border bg-card shadow-soft">
+          {mainPhotos[0] && urls[mainPhotos[0].path] ? (
+            <div className="aspect-[4/5] max-h-[480px] bg-muted">
+              <img
+                src={urls[mainPhotos[0].path]}
+                alt={pr?.display_name ?? "Me"}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          ) : (
+            <div className="flex aspect-[4/5] max-h-[480px] items-center justify-center bg-muted">
+              <img
+                src="/profile-placeholder.svg"
+                alt="No photo"
+                className="h-full w-full object-cover"
+              />
+            </div>
+          )}
+          <div className="space-y-3 p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="flex items-center gap-2 text-2xl font-bold">
+                {pr?.display_name ?? "Your name"}
+                {age !== null && (
+                  <span className="text-xl font-normal text-muted-foreground">, {age}</span>
+                )}
+                {pr?.verified && <BadgeCheck className="h-5 w-5 text-primary" />}
+              </h2>
+              {pr?.verified ? (
+                <span className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-sm text-accent-foreground">
+                  <BadgeCheck className="h-4 w-4 text-primary" /> Verified
+                </span>
+              ) : (
+                <Button
+                  variant="hero"
+                  size="sm"
+                  onClick={() => setVerifyOpen(true)}
+                  disabled={!photos.length}
+                >
+                  <Camera className="mr-1 h-4 w-4" /> Verify
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5 text-xs">
+              {pr?.gender && (
+                <span className="rounded-full bg-accent px-2.5 py-1 text-accent-foreground">
+                  {pr.gender}
+                </span>
+              )}
+              {pr?.orientation && (
+                <span className="rounded-full bg-secondary px-2.5 py-1 text-secondary-foreground">
+                  {pr.orientation}
+                </span>
+              )}
+            </div>
+            {(pr?.city || pr?.country) && (
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <MapPin className="h-3.5 w-3.5" />
+                {pr?.city}
+                {pr?.city && pr?.country && ", "}
+                {pr?.country}
+              </div>
+            )}
+            {pr?.bio && <p className="text-muted-foreground">{pr.bio}</p>}
+            {pr?.looking_for && (
+              <div className="rounded-2xl bg-muted/40 p-4 text-sm">
+                <div className="text-xs text-muted-foreground">Looking for</div>
+                <div className="font-medium">{pr.looking_for}</div>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-3 pt-2">
+              <Button variant="outline" className="flex-1" asChild>
+                <Link to="/discover">
+                  <Eye className="mr-2 h-4 w-4" /> Preview in Discover
+                </Link>
+              </Button>
+              <Button className="flex-1" onClick={() => setEditing(true)}>
+                <Pencil className="mr-2 h-4 w-4" /> Edit profile
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -285,17 +399,22 @@ function ProfilePage() {
     <div className="mx-auto max-w-4xl space-y-8 p-4 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-4xl font-bold">My profile</h1>
-        {me.profile?.verified ? (
-          <span className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-sm text-accent-foreground">
-            <BadgeCheck className="h-4 w-4 text-primary" />
-            Verified
-          </span>
-        ) : (
-          <Button variant="hero" onClick={() => setVerifyOpen(true)} disabled={!photos.length}>
-            <Camera />
-            Verify my face
+        <div className="flex flex-wrap items-center gap-3">
+          {me.profile?.verified ? (
+            <span className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-sm text-accent-foreground">
+              <BadgeCheck className="h-4 w-4 text-primary" />
+              Verified
+            </span>
+          ) : (
+            <Button variant="hero" onClick={() => setVerifyOpen(true)} disabled={!photos.length}>
+              <Camera />
+              Verify my face
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => setEditing(false)}>
+            <Eye className="mr-2 h-4 w-4" /> View profile
           </Button>
-        )}
+        </div>
       </div>
       {!me.complete && (
         <p className="rounded-2xl bg-accent p-4 text-sm text-accent-foreground">
@@ -309,7 +428,9 @@ function ProfilePage() {
           <div>
             <h2 className="text-xl font-semibold">Photos ({photos.length}/6)</h2>
             <p className="text-xs text-muted-foreground">
-              Private albums require your separate approval. Set a disappearing timer (10s / 15s).
+              {photos.length >= 6
+                ? "Photo limit reached (6/6). Delete a photo to add another."
+                : "Private albums require your separate approval. Set a disappearing timer (10s / 15s)."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

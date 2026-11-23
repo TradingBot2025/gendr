@@ -19,9 +19,13 @@ import {
   Send,
   UserPlus,
   MoreHorizontal,
+  Phone,
+  Video,
+  UserX,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, logProfileView, reportProfile } from "@/lib/data";
+import { useCall } from "@/lib/calls";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -106,6 +110,8 @@ function ProfileView() {
   const uid = me?.user.id;
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const call = useCall();
+  const [carouselIndex, setCarouselIndex] = useState(0);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportDescription, setReportDescription] = useState("");
@@ -254,6 +260,10 @@ function ProfileView() {
   const visiblePhotos = profile?.visiblePhotos ?? [];
   const allPhotos = profile?.allPhotos ?? [];
   const albums = profile?.albums ?? [];
+  // Only albums that actually contain photos are shown.
+  const albumsWithPhotos = albums.filter(
+    (a: { photos?: unknown[] }) => (a.photos?.length ?? 0) > 0,
+  );
 
   const hasMainPhotos = mainPhotos.length > 0;
   const allVisiblePrivate =
@@ -418,115 +428,57 @@ function ProfileView() {
           </TabsList>
 
           <TabsContent value="info" className="mt-4 space-y-6">
-            {/* Compact Profile Header */}
-            <div className="flex items-start gap-4 rounded-3xl border bg-card p-4 shadow-soft">
-              <Button
-                variant="ghost"
-                className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl p-0"
-                onClick={() => {
-                  if (hasMainPhotos) {
-                    setViewerPhotos(null);
-                    setPhotoViewerIndex(0);
-                    setPhotoViewerOpen(true);
-                  }
-                }}
-                aria-label="View photo"
-              >
-                {hasMainPhotos && mainPhotos[0] ? (
-                  urls[mainPhotos[0].path] ? (
-                    <img
-                      src={urls[mainPhotos[0].path]}
-                      alt={p.display_name}
-                      className={`h-full w-full object-cover ${showMainBlur ? "blur-[12px]" : ""}`}
-                      loading="eager"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center font-display text-2xl text-muted-foreground">
-                      {p.display_name?.[0]}
-                    </div>
-                  )
-                ) : showFallbackBlur && fallbackMainPhoto ? (
-                  <div className="flex h-full w-full items-center justify-center bg-muted">
-                    <Lock className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center font-display text-2xl text-muted-foreground">
-                    {p.display_name?.[0]}
-                  </div>
-                )}
-              </Button>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h1 className="flex items-center gap-2 text-2xl font-bold">
-                      {p.display_name}
-                      {p.age !== null && p.age !== undefined && (
-                        <span className="text-lg font-normal text-muted-foreground">, {p.age}</span>
-                      )}
-                      {p.verified && <BadgeCheck className="h-5 w-5 text-primary" />}
-                    </h1>
-                    <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
-                      {p.gender && (
-                        <span className="rounded-full bg-accent px-2 py-0.5 text-accent-foreground">
-                          {p.gender}
-                        </span>
-                      )}
-                      {p.orientation && (
-                        <span className="rounded-full bg-secondary px-2 py-0.5 text-secondary-foreground">
-                          {p.orientation}
-                        </span>
-                      )}
-                      {p.is_online && (
-                        <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">
-                          <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />{" "}
-                          Online
-                        </span>
-                      )}
-                    </div>
-                    {p.city && (
-                      <div className="mt-2 flex items-center gap-1 text-sm text-muted-foreground">
-                        <MapPin className="h-3.5 w-3.5" />
-                        {p.city}
-                        {p.country && `, ${p.country}`}
-                      </div>
-                    )}
-                  </div>
+            {/* Photo carousel */}
+            <div className="overflow-hidden rounded-3xl border bg-card shadow-soft">
+              <div className="relative aspect-[4/5] max-h-[520px] bg-muted">
+                {/* Options dropdown overlay */}
+                <div className="absolute right-3 top-3 z-20">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-9 w-9 rounded-full"
+                        className="h-10 w-10 rounded-full bg-black/40 text-white hover:bg-black/60 hover:text-white"
                         aria-label="More options"
                       >
-                        <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+                        <MoreHorizontal className="h-5 w-5" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56">
                       <DropdownMenuItem onClick={() => setReportOpen(true)}>
                         <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setReportReason("harassment");
+                          setBlockAfterReport(true);
+                          setReportOpen(true);
+                        }}
+                      >
+                        <UserX className="h-4 w-4 mr-2 text-destructive" /> Block
+                      </DropdownMenuItem>
                       {!conn && (
-                        <DropdownMenuItem
-                          onClick={() =>
-                            supabase
-                              .from("connections")
-                              .insert({ requester: uid, addressee: p.id })
-                              .then(({ error }) => {
-                                if (error) {
-                                  toast.error(error.message);
-                                  return;
-                                }
-                                toast.success("Connection request sent");
-                                qc.invalidateQueries({ queryKey: ["discover"] });
-                                qc.invalidateQueries({ queryKey: ["profile-view", username] });
-                              })
-                          }
-                        >
-                          <UserPlus className="h-4 w-4 mr-2" /> Connect
-                        </DropdownMenuItem>
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() =>
+                              supabase
+                                .from("connections")
+                                .insert({ requester: uid, addressee: p.id })
+                                .then(({ error }) => {
+                                  if (error) {
+                                    toast.error(error.message);
+                                    return;
+                                  }
+                                  toast.success("Connection request sent");
+                                  qc.invalidateQueries({ queryKey: ["discover"] });
+                                  qc.invalidateQueries({ queryKey: ["profile-view", username] });
+                                })
+                            }
+                          >
+                            <UserPlus className="h-4 w-4 mr-2" /> Connect
+                          </DropdownMenuItem>
+                        </>
                       )}
                       {isPending && isOwnRequest && (
                         <DropdownMenuItem
@@ -586,6 +538,93 @@ function ProfileView() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+
+                {/* Carousel image */}
+                {hasMainPhotos && mainPhotos[carouselIndex] ? (
+                  urls[mainPhotos[carouselIndex].path] ? (
+                    <button
+                      type="button"
+                      className="h-full w-full"
+                      onClick={() => {
+                        setViewerPhotos(null);
+                        setPhotoViewerIndex(carouselIndex);
+                        setPhotoViewerOpen(true);
+                      }}
+                      aria-label="View photo"
+                    >
+                      <img
+                        src={urls[mainPhotos[carouselIndex].path]}
+                        alt={p.display_name}
+                        className={`h-full w-full object-cover ${showMainBlur ? "blur-[16px]" : ""}`}
+                        loading="eager"
+                      />
+                    </button>
+                  ) : (
+                    <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">
+                      {p.display_name?.[0]}
+                    </div>
+                  )
+                ) : showFallbackBlur && fallbackMainPhoto ? (
+                  <button
+                    type="button"
+                    className="h-full w-full"
+                    onClick={() => handleRequestAlbumAccess(privateAlbumWithPhotos!.id)}
+                  >
+                    {fallbackMainPhoto.preview_path &&
+                    previewUrls[fallbackMainPhoto.preview_path] ? (
+                      <img
+                        src={previewUrls[fallbackMainPhoto.preview_path]}
+                        alt=""
+                        className="h-full w-full object-cover blur-[16px]"
+                      />
+                    ) : null}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4 text-center">
+                      <Lock className="mb-3 h-12 w-12 text-white/90" />
+                      <p className="text-lg font-semibold text-white">Private Photos</p>
+                      <span className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">
+                        <UserPlus className="h-4 w-4" /> Request Access
+                      </span>
+                    </div>
+                  </button>
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <img
+                      src="/profile-placeholder.svg"
+                      alt="No photo"
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                )}
+
+                {/* Blur overlay for private main photos (connected-but-unapproved) */}
+                {showMainBlur && hasMainPhotos && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 p-4 text-center">
+                    <Lock className="mb-3 h-12 w-12 text-white/90" />
+                    <p className="text-lg font-semibold text-white">Private Photos</p>
+                    <button
+                      type="button"
+                      onClick={() => handleRequestAlbumAccess(privateAlbumWithPhotos!.id)}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground"
+                    >
+                      <UserPlus className="h-4 w-4" /> Request Access
+                    </button>
+                  </div>
+                )}
+
+                {/* Dots */}
+                {hasMainPhotos && mainPhotos.length > 1 && !showMainBlur && (
+                  <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-1.5">
+                    {mainPhotos.map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setCarouselIndex(i)}
+                        className={`h-2.5 w-2.5 rounded-full transition-colors ${i === carouselIndex ? "bg-white" : "bg-white/50"}`}
+                        aria-label={`Go to photo ${i + 1}`}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -633,6 +672,16 @@ function ProfileView() {
                   <span className="flex items-center gap-1">
                     <MapPin className="h-3.5 w-3.5" />
                     {p.country}
+                  </span>
+                )}
+                {!p.is_online && p.last_seen_at && (
+                  <span className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+                    Last seen{" "}
+                    {new Date(p.last_seen_at).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })}
                   </span>
                 )}
               </div>
@@ -687,71 +736,111 @@ function ProfileView() {
               )}
 
               {/* Action Buttons */}
-              <div className="flex flex-wrap gap-3 pt-2">
-                {isConnected ? (
-                  <Button asChild variant="hero" className="flex-1 min-w-[140px]">
-                    <Link to="/chat/$id" params={{ id: conn!.id }}>
-                      <MessageCircle className="h-4 w-4 mr-2" /> Chat
-                    </Link>
-                  </Button>
-                ) : isPending ? (
-                  isOwnRequest ? (
-                    <Button variant="secondary" disabled className="flex-1 min-w-[140px]">
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Waiting for response…
-                    </Button>
-                  ) : (
-                    <div className="flex gap-2">
-                      <Button
-                        variant="success"
-                        className="flex-1 min-w-[120px]"
-                        onClick={() =>
-                          supabase
-                            .from("connections")
-                            .update({ status: "accepted" })
-                            .eq("id", conn!.id)
-                            .then(() => {
-                              toast.success("Connected!");
-                              qc.invalidateQueries({ queryKey: ["profile-view", username] });
-                            })
-                        }
-                      >
-                        <Check className="h-4 w-4 mr-2" /> Accept
+              <div className="space-y-3 pt-2">
+                <div className="flex flex-wrap gap-3">
+                  {isConnected ? (
+                    <>
+                      <Button asChild variant="hero" className="flex-1 min-w-[140px]">
+                        <Link to="/chat/$id" params={{ id: conn!.id }}>
+                          <MessageCircle className="h-4 w-4 mr-2" /> Chat
+                        </Link>
                       </Button>
                       <Button
                         variant="outline"
-                        className="flex-1 min-w-[120px]"
-                        onClick={() =>
-                          supabase
-                            .from("connections")
-                            .update({ status: "declined" })
-                            .eq("id", conn!.id)
-                            .then(() => {
-                              qc.invalidateQueries({ queryKey: ["profile-view", username] });
-                            })
-                        }
+                        className="h-11 w-11 shrink-0 rounded-full"
+                        onClick={() => call.start(p.id, p.display_name, false)}
+                        aria-label="Voice call"
                       >
-                        <X className="h-4 w-4 mr-2" /> Decline
+                        <Phone className="h-5 w-5" />
                       </Button>
-                    </div>
-                  )
-                ) : (
+                      <Button
+                        variant="outline"
+                        className="h-11 w-11 shrink-0 rounded-full"
+                        onClick={() => call.start(p.id, p.display_name, true)}
+                        aria-label="Video call"
+                      >
+                        <Video className="h-5 w-5" />
+                      </Button>
+                    </>
+                  ) : isPending ? (
+                    isOwnRequest ? (
+                      <Button variant="secondary" disabled className="flex-1 min-w-[140px]">
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Waiting for response…
+                      </Button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="success"
+                          className="flex-1 min-w-[120px]"
+                          onClick={() =>
+                            supabase
+                              .from("connections")
+                              .update({ status: "accepted" })
+                              .eq("id", conn!.id)
+                              .then(() => {
+                                toast.success("Connected!");
+                                qc.invalidateQueries({ queryKey: ["profile-view", username] });
+                              })
+                          }
+                        >
+                          <Check className="h-4 w-4 mr-2" /> Accept
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="flex-1 min-w-[120px]"
+                          onClick={() =>
+                            supabase
+                              .from("connections")
+                              .update({ status: "declined" })
+                              .eq("id", conn!.id)
+                              .then(() => {
+                                qc.invalidateQueries({ queryKey: ["profile-view", username] });
+                              })
+                          }
+                        >
+                          <X className="h-4 w-4 mr-2" /> Decline
+                        </Button>
+                      </div>
+                    )
+                  ) : (
+                    <Button
+                      variant="hero"
+                      className="flex-1 min-w-[140px]"
+                      onClick={() =>
+                        supabase
+                          .from("connections")
+                          .insert({ requester: uid, addressee: p.id })
+                          .then(() => {
+                            toast.success("Connection request sent");
+                            qc.invalidateQueries({ queryKey: ["profile-view", username] });
+                            qc.invalidateQueries({ queryKey: ["discover"] });
+                          })
+                      }
+                    >
+                      <User className="h-4 w-4 mr-2" /> Connect
+                    </Button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-3">
                   <Button
-                    variant="hero"
-                    className="flex-1 min-w-[140px]"
-                    onClick={() =>
-                      supabase
-                        .from("connections")
-                        .insert({ requester: uid, addressee: p.id })
-                        .then(() => {
-                          toast.success("Connection request sent");
-                          qc.invalidateQueries({ queryKey: ["profile-view", username] });
-                          qc.invalidateQueries({ queryKey: ["discover"] });
-                        })
-                    }
+                    variant="ghost"
+                    className="flex-1 min-w-[120px]"
+                    onClick={() => setReportOpen(true)}
                   >
-                    <User className="h-4 w-4 mr-2" /> Connect
+                    <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
                   </Button>
-                )}
+                  <Button
+                    variant="ghost"
+                    className="flex-1 min-w-[120px]"
+                    onClick={() => {
+                      setReportReason("harassment");
+                      setBlockAfterReport(true);
+                      setReportOpen(true);
+                    }}
+                  >
+                    <UserX className="h-4 w-4 mr-2 text-destructive" /> Block
+                  </Button>
+                </div>
               </div>
             </div>
           </TabsContent>
@@ -791,13 +880,13 @@ function ProfileView() {
               </div>
             )}
             {/* Albums */}
-            {albums.length > 0 && (
+            {albumsWithPhotos.length > 0 && (
               <div className="space-y-4">
                 <h3 className="text-2xl font-bold flex items-center gap-2">
-                  <Image className="h-6 w-6" /> Albums ({albums.length})
+                  <Image className="h-6 w-6" /> Albums ({albumsWithPhotos.length})
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {albums.map(
+                  {albumsWithPhotos.map(
                     (album: {
                       id: string;
                       is_private: boolean;
