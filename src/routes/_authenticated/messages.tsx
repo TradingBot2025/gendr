@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, type Profile } from "@/lib/data";
 import { ProfileCard } from "@/components/app/ProfileCard";
@@ -17,6 +17,7 @@ import {
   User,
   Flag,
   UserX,
+  FileText,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -267,11 +268,11 @@ function Messages() {
         supabase
           .from("public_profiles")
           .select("id,username,display_name")
-          .in("id", [...new Set((albums?.data ?? []).map((a) => a.user_id))]),
+          .in("id", [...new Set((albums ?? []).map((a) => a.user_id))]),
       ]);
 
       const ownerPhotos = await Promise.all(
-        (albums?.data ?? []).map(async (a) => {
+        (albums ?? []).map(async (a) => {
           const { data: photos } = await supabase
             .from("photos")
             .select("path")
@@ -283,8 +284,8 @@ function Messages() {
       );
 
       return requests.map((r) => {
-        const album = albums?.data?.find((a) => a.id === r.album_id);
-        const owner = owners?.data?.find((p) => p.id === album?.user_id);
+        const album = albums?.find((a) => a.id === r.album_id);
+        const owner = owners?.find((p) => p.id === album?.user_id);
         const ownerPhoto = ownerPhotos.find((op) => op.id === album?.user_id)?.path ?? null;
         return {
           album_id: r.album_id,
