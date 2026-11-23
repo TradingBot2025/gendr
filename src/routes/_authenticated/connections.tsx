@@ -14,7 +14,16 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { MessageCircle, Flag, UserX, User, Loader2, MoreHorizontal, X } from "lucide-react";
+import {
+  MessageCircle,
+  Flag,
+  UserX,
+  User,
+  UserPlus,
+  Loader2,
+  MoreHorizontal,
+  X,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -163,9 +172,10 @@ function Connections() {
     items: typeof all,
     action: (d: (typeof all)[number]) => ReactNode,
     empty: string,
+    cols = "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4",
   ) =>
     items.length ? (
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div className={`grid ${cols} gap-3`}>
         {items.map((d) => {
           const profileUsername =
             d.p.username && d.p.username.trim() !== "" ? d.p.username : d.p.id;
@@ -175,6 +185,7 @@ function Connections() {
               p={d.p}
               photo={d.photo ? urls[d.photo] : undefined}
               action={action(d)}
+              compact
               to="/profile/$username"
               toParams={{ username: profileUsername }}
             />
@@ -187,7 +198,15 @@ function Connections() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
-      <h1 className="mb-6 text-4xl font-bold">Matches</h1>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h1 className="text-3xl font-bold sm:text-4xl">Matches</h1>
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/referrals">
+            <UserPlus className="h-4 w-4" />
+            <span className="ml-2">Refer a friend</span>
+          </Link>
+        </Button>
+      </div>
       <Tabs defaultValue="matches">
         <TabsList className="mb-6">
           <TabsTrigger value="matches">Matches ({groups.matches.length})</TabsTrigger>
@@ -237,15 +256,17 @@ function Connections() {
               );
             },
             "No matches yet.",
+            "grid-cols-3 sm:grid-cols-4 lg:grid-cols-5",
           )}
         </TabsContent>
         <TabsContent value="incoming">
           {grid(
             groups.incoming,
             (d) => (
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 <Button
                   variant="success"
+                  size="sm"
                   className="flex-1"
                   onClick={() => respond(d.c.id, "accepted")}
                 >
@@ -253,6 +274,7 @@ function Connections() {
                 </Button>
                 <Button
                   variant="outline"
+                  size="sm"
                   className="flex-1"
                   onClick={() => respond(d.c.id, "declined")}
                 >
@@ -267,11 +289,11 @@ function Connections() {
           {grid(
             groups.sent,
             (d) => (
-              <div className="flex gap-2">
-                <Button variant="secondary" disabled className="flex-1">
-                  Waiting for response…
+              <div className="flex gap-1.5">
+                <Button variant="secondary" size="sm" disabled className="flex-1">
+                  Waiting
                 </Button>
-                <Button variant="outline" onClick={() => remove(d.c.id)}>
+                <Button variant="outline" size="sm" onClick={() => remove(d.c.id)}>
                   Cancel
                 </Button>
               </div>

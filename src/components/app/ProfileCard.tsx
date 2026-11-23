@@ -17,20 +17,23 @@ export function ProfileCard({
   action,
   to,
   toParams,
+  compact = false,
 }: {
   p: ProfileLike;
   photo?: string | undefined;
   action?: ReactNode;
   to?: string;
   toParams?: Record<string, string>;
+  compact?: boolean;
 }) {
   const age = getAge(p);
   const cover = useCoverPhoto(p.id);
   const image = cover.url ?? (!cover.blurred ? photo : undefined);
+  const isOnline = "is_online" in p ? !!p.is_online : false;
 
   const cardContent = (
     <>
-      <div className="relative aspect-[4/5] bg-muted">
+      <div className={`relative bg-muted ${compact ? "aspect-square" : "aspect-[4/5]"}`}>
         {to && (
           <Link
             to={to}
@@ -56,45 +59,67 @@ export function ProfileCard({
             className="h-full w-full object-cover"
           />
         )}
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent p-4 text-stage-foreground">
-          <div className="flex items-center gap-1.5 text-xl font-semibold">
-            {p.display_name}
+        {isOnline && (
+          <span className="absolute right-2 top-2 z-20 h-3 w-3 rounded-full border-2 border-card bg-green-500" />
+        )}
+        <div
+          className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent text-stage-foreground ${compact ? "p-2" : "p-4"}`}
+        >
+          <div
+            className={`flex items-center gap-1 font-semibold ${compact ? "text-sm" : "text-xl"}`}
+          >
+            <span className="truncate">{p.display_name}</span>
             {age !== null && <span className="font-normal">, {age}</span>}
             {p.verified && (
-              <BadgeCheck className="h-5 w-5 text-primary-glow" aria-label="Verified" />
+              <BadgeCheck
+                className={`${compact ? "h-3.5 w-3.5" : "h-5 w-5"} shrink-0 text-primary-glow`}
+                aria-label="Verified"
+              />
             )}
           </div>
-          <div className="flex items-center gap-1 text-sm opacity-90">
-            <MapPin className="h-3.5 w-3.5" />
-            {[p.city, p.country].filter(Boolean).join(", ")}
-          </div>
+          {!compact && (
+            <div className="flex items-center gap-1 text-sm opacity-90">
+              <MapPin className="h-3.5 w-3.5" />
+              {[p.city, p.country].filter(Boolean).join(", ")}
+            </div>
+          )}
         </div>
-        {to && (
-          <div className="absolute top-3 right-3 bg-card/90 rounded-full p-1.5 shadow">
+        {!compact && to && (
+          <div className="absolute top-3 right-3 z-20 rounded-full bg-card/90 p-1.5 shadow">
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </div>
         )}
       </div>
-      <div className="space-y-3 p-4">
-        <div className="flex flex-wrap gap-1.5 text-xs">
-          {p.gender && (
-            <span className="rounded-full bg-accent px-2.5 py-1 text-accent-foreground">
-              {p.gender}
-            </span>
-          )}
-          {p.orientation && (
-            <span className="rounded-full bg-secondary px-2.5 py-1 text-secondary-foreground">
-              {p.orientation}
-            </span>
-          )}
+      {compact ? (
+        action ? (
+          <div className="p-2">{action}</div>
+        ) : null
+      ) : (
+        <div className="space-y-3 p-4">
+          <div className="flex flex-wrap gap-1.5 text-xs">
+            {p.gender && (
+              <span className="rounded-full bg-accent px-2.5 py-1 text-accent-foreground">
+                {p.gender}
+              </span>
+            )}
+            {p.orientation && (
+              <span className="rounded-full bg-secondary px-2.5 py-1 text-secondary-foreground">
+                {p.orientation}
+              </span>
+            )}
+          </div>
+          {p.bio && <p className="line-clamp-2 text-sm text-muted-foreground">{p.bio}</p>}
+          {action}
         </div>
-        {p.bio && <p className="line-clamp-2 text-sm text-muted-foreground">{p.bio}</p>}
-        {action}
-      </div>
+      )}
     </>
   );
 
   return (
-    <div className="overflow-hidden rounded-3xl border bg-card shadow-soft">{cardContent}</div>
+    <div
+      className={`overflow-hidden border bg-card shadow-soft ${compact ? "rounded-2xl" : "rounded-3xl"}`}
+    >
+      {cardContent}
+    </div>
   );
 }
