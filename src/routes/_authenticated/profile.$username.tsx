@@ -249,14 +249,102 @@ function ProfileView() {
   };
 
   return (
+    <>
       <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-8">
       {/* Profile Header */}
       <div className="rounded-3xl border bg-card overflow-hidden shadow-soft">
         {/* Photo Carousel */}
         <div className="relative aspect-[4/5] bg-muted">
-          <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">
-            {p.display_name?.[0]}
-          </div>
+          {mainPhotos.length > 0 && (
+            <div>
+              <div className="h-full w-full overflow-hidden">
+                {mainPhotos.map((ph: any, i: number) => (
+                  <Button
+                    key={ph.id}
+                    variant="ghost"
+                    className="h-full w-full p-0"
+                    onClick={() => { 
+                      if (showMainBlur && i === 0) {
+                        setShowPrivateRequest(true);
+                        return;
+                      }
+                      setViewerPhotos(null); 
+                      setPhotoViewerIndex(i); 
+                      setPhotoViewerOpen(true); 
+                    }}
+                  >
+                    <div className="relative h-full w-full">
+                      <img
+                        src={urls[ph.path] || ""}
+                        alt={`${p.display_name}'s photo ${i + 1}`}
+                        className={`h-full w-full object-cover ${showMainBlur && i === 0 ? "blur-[20px]" : ""}`}
+                        loading={i === 0 ? "eager" : "lazy"}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                      {showMainBlur && i === 0 && (
+                        <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
+                          <Lock className="h-12 w-12 text-white/90 mb-3" />
+                          <p className="text-white text-lg font-semibold">Private Photos</p>
+                          <p className="text-white/70 text-sm mt-1">This user's photos are private</p>
+                          <Button 
+                            variant="default" 
+                            className="mt-4 bg-primary text-primary-foreground"
+                            onClick={(e) => { e.stopPropagation(); setShowPrivateRequest(true); }}
+                          >
+                            <UserPlus className="h-4 w-4 mr-2" /> Request Access
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </Button>
+                ))}
+              </div>
+              {mainPhotos.length > 1 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
+                  {mainPhotos.map((_, i) => (
+                    <span
+                      key={i}
+                      className={`h-2 w-2 rounded-full transition-colors ${!showMainBlur && i === 0 ? "bg-white" : "bg-white/50"}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {mainPhotos.length === 0 && showFallbackBlur && fallbackMainPhoto && (
+            <Button
+              variant="ghost"
+              className="h-full w-full p-0"
+              onClick={() => setShowPrivateRequest(true)}
+            >
+              <div className="relative h-full w-full">
+                <img
+                  src={urls[fallbackMainPhoto.path] || ""}
+                  alt={`${p.display_name}'s private photo`}
+                  className="h-full w-full object-cover blur-[20px]"
+                  loading="eager"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+                <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
+                  <Lock className="h-12 w-12 text-white/90 mb-3" />
+                  <p className="text-white text-lg font-semibold">Private Photos</p>
+                  <p className="text-white/70 text-sm mt-1">This user's photos are private</p>
+                  <Button 
+                    variant="default" 
+                    className="mt-4 bg-primary text-primary-foreground"
+                    onClick={(e) => { e.stopPropagation(); setShowPrivateRequest(true); }}
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" /> Request Access
+                  </Button>
+                </div>
+              </div>
+            </Button>
+          )}
+          {mainPhotos.length === 0 && (!showFallbackBlur || !fallbackMainPhoto) && (
+            <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">
+              {p.display_name?.[0]}
+            </div>
+          )}
         </div>
         
         {/* Badges */}
@@ -278,6 +366,7 @@ function ProfileView() {
             <Flag className="h-5 w-5 text-destructive" />
           </Button>
         </div>
+      </div>
 
       {/* Profile Info */}
       <div className="p-6 space-y-4">
@@ -334,25 +423,85 @@ function ProfileView() {
       </div>
     </div>
 
-    <div className="grid gap-4 sm:grid-cols-2">
-      <div className="rounded-3xl border bg-card p-6 shadow-soft">
-        <h3 className="font-semibold mb-3 flex items-center gap-2"><Shield className="h-5 w-5" />Safety</h3>
-        <div className="space-y-2 text-sm text-muted-foreground">
-          <p>• Only accepted matches can message you</p>
-          <p>• Private photos are visible only to matches</p>
-          <p>• All messages expire after 24 hours</p>
-          <p>• Report inappropriate behavior anytime</p>
+    {/* Albums */}
+    {albums.length > 0 && (
+      <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-8">
+        <h3 className="text-2xl font-bold flex items-center gap-2"><Image className="h-6 w-6" />Albums ({albums.length})</h3>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {albums.map((album: any) => {
+            const albumPhotos = album.photos ?? [];
+            const hasPhotos = albumPhotos.length > 0;
+            const firstPhotoUrl = hasPhotos && albumPhotos[0]?.path ? urls[albumPhotos[0].path] : null;
+            const isPrivateAlbum = album.is_private && !isConnected;
+            
+            return (
+              <Button
+                key={album.id}
+                variant="ghost"
+                className="rounded-3xl border bg-card overflow-hidden shadow-soft h-auto p-0"
+                onClick={() => {
+                  if (isPrivateAlbum && hasPhotos) {
+                    setShowPrivateRequest(true);
+                    return;
+                  }
+                  hasPhotos && (setViewerPhotos(albumPhotos), setPhotoViewerIndex(0), setPhotoViewerOpen(true))
+                }}
+                disabled={!hasPhotos}
+              >
+                <div className="aspect-[4/5] bg-muted relative">
+                  {firstPhotoUrl ? (
+                    <img src={firstPhotoUrl} alt={album.name} className={`h-full w-full object-cover ${isPrivateAlbum ? "blur-[20px]" : ""}`} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  ) : (
+                    <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">{album.name?.[0]}</div>
+                  )}
+                  {isPrivateAlbum && (
+                    <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
+                      <Lock className="h-8 w-8 text-white/90 mb-2" />
+                      <p className="text-white text-sm font-medium">Private Album</p>
+                      <Button 
+                        variant="default" 
+                        className="mt-3 bg-primary text-primary-foreground"
+                        onClick={(e) => { e.stopPropagation(); setShowPrivateRequest(true); }}
+                      >
+                        <UserPlus className="h-3 w-3 mr-1" /> Request Access
+                      </Button>
+                    </div>
+                  )}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent p-4 text-stage-foreground">
+                    <div className="font-semibold">{album.name}</div>
+                    <div className="text-sm opacity-90">{albumPhotos.length} photo{albumPhotos.length !== 1 ? "s" : ""}</div>
+                  </div>
+                </div>
+              </Button>
+            );
+          })}
         </div>
       </div>
-      <div className="rounded-3xl border bg-card p-6 shadow-soft">
-        <h3 className="font-semibold mb-3 flex items-center gap-2"><Heart className="h-5 w-5" />Looking for</h3>
-        <div className="flex flex-wrap gap-1.5">
-          {GENDERS.slice(0, 5).map((g) => <span key={g} className="rounded-full bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">{g}</span>)}
-          {GENDERS.length > 5 && <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">+{GENDERS.length - 5} more</span>}
+    )}
+
+    {/* Additional Info Cards */}
+    <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-8">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-3xl border bg-card p-6 shadow-soft">
+          <h3 className="font-semibold mb-3 flex items-center gap-2"><Shield className="h-5 w-5" />Safety</h3>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>• Only accepted matches can message you</p>
+            <p>• Private photos are visible only to matches</p>
+            <p>• All messages expire after 24 hours</p>
+            <p>• Report inappropriate behavior anytime</p>
+          </div>
+        </div>
+        <div className="rounded-3xl border bg-card p-6 shadow-soft">
+          <h3 className="font-semibold mb-3 flex items-center gap-2"><Heart className="h-5 w-5" />Looking for</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {GENDERS.slice(0, 5).map((g) => <span key={g} className="rounded-full bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">{g}</span>)}
+            {GENDERS.length > 5 && <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">+{GENDERS.length - 5} more</span>}
+          </div>
         </div>
       </div>
     </div>
 
+    {/* Private Access Request Dialog */}
     <Dialog open={showPrivateRequest} onOpenChange={setShowPrivateRequest}>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -461,6 +610,6 @@ function ProfileView() {
       onSetTimer={handleSetTimer}
       albums={albums}
     />
-  </div>
+    </>
   );
 }
