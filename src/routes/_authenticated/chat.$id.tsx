@@ -244,6 +244,9 @@ function Chat() {
     "attachments",
     (msgs ?? []).map((m) => m.attachment_path),
   );
+  // Album photos live in the "photos" bucket, not attachments — sign them separately.
+  const albumPhotoPaths = (myAlbums ?? []).flatMap((a) => a.photos.map((p) => p.path));
+  const albumUrls = useSigned("photos", albumPhotoPaths);
 
   // Track viewed messages for expiring photos
   const viewedMsgRef = useRef<Set<string>>(new Set());
@@ -878,9 +881,9 @@ function Chat() {
                               onClick={() => sendAlbumPhoto(p.path, p.id)}
                               disabled={sending}
                             >
-                              {aurls[p.path] ? (
+                              {albumUrls[p.path] ? (
                                 <img
-                                  src={aurls[p.path]}
+                                  src={albumUrls[p.path]}
                                   alt=""
                                   className="h-full w-full object-cover rounded"
                                 />

@@ -8,6 +8,9 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   GENDERS,
   ORIENTATIONS,
+  EDUCATION_LEVELS,
+  CHILDREN_OPTIONS,
+  MARITAL_STATUS_OPTIONS,
   useMe,
   useSigned,
   usePhotoAlbums,
@@ -51,6 +54,11 @@ function ProfilePage() {
     country: "",
     bio: "",
     looking_for: "",
+    height: "",
+    weight: "",
+    education: "",
+    children: "",
+    marital_status: "",
   });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -74,6 +82,11 @@ function ProfilePage() {
         country: p.country ?? "",
         bio: p.bio ?? "",
         looking_for: p.looking_for ?? "",
+        height: p.height?.toString() ?? "",
+        weight: p.weight?.toString() ?? "",
+        education: p.education ?? "",
+        children: p.children ?? "",
+        marital_status: p.marital_status ?? "",
       });
   }, [me?.profile]);
 
@@ -145,7 +158,12 @@ function ProfilePage() {
         city: form.city.trim().slice(0, 80) || null,
         country: form.country.trim().slice(0, 80) || null,
         bio: form.bio.trim().slice(0, 500) || null,
-        looking_for: form.looking_for.trim().slice(0, 500) || null,
+        looking_for: form.looking_for || null,
+        height: form.height ? Number(form.height) : null,
+        weight: form.weight ? Number(form.weight) : null,
+        education: form.education || null,
+        children: form.children || null,
+        marital_status: form.marital_status || null,
       })
       .eq("id", me.user.id);
     setSaving(false);
@@ -466,6 +484,88 @@ function ProfilePage() {
             maxLength={80}
           />
         </div>
+        <div className="space-y-1.5">
+          <Label>Height (cm)</Label>
+          <Input
+            type="number"
+            min={100}
+            max={250}
+            value={form.height}
+            onChange={(e) => set("height")(e.target.value)}
+            placeholder="e.g. 170"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Weight (kg)</Label>
+          <Input
+            type="number"
+            min={30}
+            max={300}
+            value={form.weight}
+            onChange={(e) => set("weight")(e.target.value)}
+            placeholder="e.g. 65"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Education</Label>
+          <Select value={form.education} onValueChange={set("education")}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose" />
+            </SelectTrigger>
+            <SelectContent>
+              {EDUCATION_LEVELS.map((e) => (
+                <SelectItem key={e} value={e}>
+                  {e}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Children</Label>
+          <Select value={form.children} onValueChange={set("children")}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose" />
+            </SelectTrigger>
+            <SelectContent>
+              {CHILDREN_OPTIONS.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Marital / relationship status</Label>
+          <Select value={form.marital_status} onValueChange={set("marital_status")}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose" />
+            </SelectTrigger>
+            <SelectContent>
+              {MARITAL_STATUS_OPTIONS.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {m}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Looking for (gender)</Label>
+          <Select value={form.looking_for} onValueChange={set("looking_for")}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose" />
+            </SelectTrigger>
+            <SelectContent>
+              {GENDERS.map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label>About me</Label>
           <Textarea
@@ -473,15 +573,6 @@ function ProfilePage() {
             onChange={(e) => set("bio")(e.target.value)}
             maxLength={500}
             rows={4}
-          />
-        </div>
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label>Looking for</Label>
-          <Textarea
-            value={form.looking_for}
-            onChange={(e) => set("looking_for")(e.target.value)}
-            maxLength={500}
-            rows={3}
           />
         </div>
         <Button type="submit" variant="hero" disabled={saving} className="sm:col-span-2">

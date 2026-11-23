@@ -20,6 +20,11 @@ export type Profile = Pick<
   | "is_online"
   | "created_at"
   | "looking_for"
+  | "height"
+  | "weight"
+  | "education"
+  | "children"
+  | "marital_status"
 >;
 
 // Public profile type (safe columns only, age instead of birthdate)
@@ -61,6 +66,31 @@ export const ORIENTATIONS = [
   "Queer",
   "Questioning",
   "Other",
+];
+export const EDUCATION_LEVELS = [
+  "High school",
+  "Vocational / Trade school",
+  "Some college",
+  "Bachelor's degree",
+  "Master's degree",
+  "Doctorate / PhD",
+  "Prefer not to say",
+];
+export const CHILDREN_OPTIONS = [
+  "No children",
+  "Have children",
+  "Want children",
+  "Don't want children",
+  "Prefer not to say",
+];
+export const MARITAL_STATUS_OPTIONS = [
+  "Single",
+  "In a relationship",
+  "Married",
+  "Separated",
+  "Divorced",
+  "Widowed",
+  "Prefer not to say",
 ];
 
 export function ageOf(birthdate: string | null): number | null {
