@@ -160,7 +160,7 @@ function Dashboard() {
             <div className="text-sm text-muted-foreground">{s.label}</div>
           </Link>
         ))}
-        <Link to="/profile" className="rounded-3xl border bg-card p-5 shadow-soft">
+        <Link to="/profile/" className="rounded-3xl border bg-card p-5 shadow-soft">
           <div className="text-sm text-muted-foreground">Profile strength</div>
           <div className="mt-2 text-3xl font-bold">{pct}%</div>
           <Progress value={pct} className="mt-3" />

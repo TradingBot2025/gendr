@@ -7,10 +7,10 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Compass, Heart, LogOut, Settings, Shuffle, MessageCircle } from "lucide-react";
+import { Compass, Heart, LogOut, Settings, Shuffle, MessageCircle, UserCog } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
-import { NotificationProvider, useNotifications } from "@/lib/notifications";
+import { useNotifications } from "@/lib/notifications";
 import { CallProvider } from "@/lib/calls";
 import { CallOverlay } from "@/components/app/CallOverlay";
 import { Button } from "@/components/ui/button";
@@ -53,17 +53,16 @@ function Shell() {
     );
 
   return (
-    <NotificationProvider>
-      <CallProvider userId={me.user.id} myName={me.profile?.display_name ?? "Someone"}>
-        <ShellInner signOut={signOut} />
-      </CallProvider>
-    </NotificationProvider>
+    <CallProvider userId={me.user.id} myName={me.profile?.display_name ?? "Someone"}>
+      <ShellInner signOut={signOut} />
+    </CallProvider>
   );
 }
 
 function ShellInner({ signOut }: { signOut: () => void }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { unreadCount: unread } = useNotifications();
+  const { data: me } = useMe();
 
   // Desktop sidebar nav (full set)
   const desktopNav = [
@@ -72,6 +71,9 @@ function ShellInner({ signOut }: { signOut: () => void }) {
     { to: "/messages", label: "Messages", icon: MessageCircle },
     { to: "/random", label: "Random", icon: Shuffle },
     { to: "/account", label: "Account", icon: Settings },
+    ...(me?.isAdmin
+      ? ([{ to: "/admin", label: "Admin", icon: UserCog }] as const)
+      : []),
   ] as const;
 
   // Mobile bottom nav — 5 items per roadmap: Discover, Matches, Messages, Random, Account

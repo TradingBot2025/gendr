@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   FileText,
   LogOut,
+  UserCog,
 } from "lucide-react";
 import { deleteAccount } from "@/lib/delete-account.functions";
 import {
@@ -519,6 +520,22 @@ function Account() {
             <span className="text-muted-foreground">Role</span>
             <span className="font-medium">{me.isAdmin ? "Administrator" : "User"}</span>
           </div>
+        </div>
+        {me.isAdmin && (
+          <div className="mt-4 pt-4 border-t">
+            <Button asChild variant="secondary" className="w-full">
+              <Link to="/admin">
+                <UserCog className="h-4 w-4 mr-2" />
+                Administration
+              </Link>
+            </Button>
+          </div>
+        )}
+        <div className="mt-4 pt-4 border-t">
+          <Button variant="ghost" className="w-full justify-start" onClick={signOut}>
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign out
+          </Button>
         </div>
       </section>
 
