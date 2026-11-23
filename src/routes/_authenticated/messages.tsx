@@ -384,6 +384,23 @@ function Messages() {
     }
     toast.success("Request declined");
     qc.invalidateQueries({ queryKey: ["album-requests-incoming"] });
+    qc.invalidateQueries({ queryKey: ["album-requests-mine"] });
+  };
+
+  // Revoke an approved album access grant (delete the request so access is removed).
+  const handleRevokeAccess = async (requestId: string) => {
+    if (!confirm("Revoke access? This person will no longer be able to view the album.")) return;
+    const { error } = await supabase
+      .from("album_access_requests")
+      .delete()
+      .eq("id", requestId);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Access revoked");
+    qc.invalidateQueries({ queryKey: ["album-requests-incoming"] });
+    qc.invalidateQueries({ queryKey: ["album-requests-mine"] });
   };
 
   const handleProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -512,9 +529,18 @@ function Messages() {
                       </>
                     )}
                     {r.status === "approved" && (
-                      <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
-                        <Check className="h-3 w-3" /> Approved
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
+                          <Check className="h-3 w-3" /> Approved
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRevokeAccess(r.id)}
+                        >
+                          <UserX className="h-3 w-3 mr-1" /> Revoke
+                        </Button>
+                      </div>
                     )}
                     {r.status === "declined" && (
                       <span className="flex items-center gap-1 text-red-600 text-sm font-medium">

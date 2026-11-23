@@ -97,10 +97,16 @@ const REPORT_REASONS = [
   { value: "other", label: "Other", description: "Something not listed here" },
 ];
 
-// Public profile columns from the public_profiles view (readable by all authenticated users).
-// Uses age directly (not birthdate) since the view exposes age.
-const PUBLIC_PROFILE_COLUMNS =
+// Base public profile columns from the public_profiles view (readable by all
+// authenticated users). Uses age directly (not birthdate) since the view exposes age.
+const BASE_PROFILE_COLUMNS =
   "id,username,display_name,gender,orientation,age,city,country,bio,looking_for,verified,last_seen_at,created_at,is_online";
+// Extended profile columns (migration 0006 added them to the profiles table). They
+// are only present in the public_profiles view after the view is recreated to include
+// them (see MIGRATIONS TO APPLY). We try them first and gracefully fall back to the
+// base columns if the view does not expose them yet.
+const EXTENDED_PROFILE_COLUMNS = "height,weight,education,children,marital_status";
+const PUBLIC_PROFILE_COLUMNS = `${BASE_PROFILE_COLUMNS},${EXTENDED_PROFILE_COLUMNS}`;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -148,19 +154,28 @@ function ProfileView() {
       // Read other members from the public_profiles view (readable by all authenticated users).
       // The route param may be a username or, as a fallback for legacy profiles without a
       // username, the user's id (UUID).
-      let { data: p } = await supabase
-        .from("public_profiles")
-        .select(PUBLIC_PROFILE_COLUMNS)
-        .eq("username", username)
-        .maybeSingle();
-
-      if (!p && UUID_RE.test(username)) {
-        const { data: pById } = await supabase
+      // Try the extended column set first; if the view doesn't expose those columns yet
+      // (migration not applied to the view), fall back to the base columns.
+      const fetchBy = async (column: "username" | "id", value: string, cols: string) => {
+        const { data } = await supabase
           .from("public_profiles")
-          .select(PUBLIC_PROFILE_COLUMNS)
-          .eq("id", username)
+          .select(cols)
+          .eq(column, value)
           .maybeSingle();
-        p = pById;
+        return data;
+      };
+
+      let p = await fetchBy("username", username, PUBLIC_PROFILE_COLUMNS);
+      // If extended columns failed (view not updated), `p` is null even for a valid
+      // username. Retry with base columns to distinguish "missing profile" from
+      // "missing columns".
+      if (!p) {
+        const base = await fetchBy("username", username, BASE_PROFILE_COLUMNS);
+        if (base) p = base;
+      }
+      if (!p && UUID_RE.test(username)) {
+        p = await fetchBy("id", username, PUBLIC_PROFILE_COLUMNS);
+        if (!p) p = await fetchBy("id", username, BASE_PROFILE_COLUMNS);
       }
 
       if (!p) return null;

@@ -110,7 +110,6 @@ const DISAPPEAR_OPTIONS = [
   { value: 60, label: "1 minute" },
   { value: 3600, label: "1 hour" },
   { value: 86400, label: "24 hours" },
-  { value: 604800, label: "7 days" },
 ];
 
 // Renders a timed photo (10s/15s) with a live countdown. Once the countdown
