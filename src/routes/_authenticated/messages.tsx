@@ -263,13 +263,17 @@ function Messages() {
       if (!requests?.length) return [];
 
       const albumIds = [...new Set(requests.map((r) => r.album_id))];
-      const [{ data: albums }, { data: owners }] = await Promise.all([
-        supabase.from("photo_albums").select("id, name, user_id").in("id", albumIds),
-        supabase
-          .from("public_profiles")
-          .select("id,username,display_name")
-          .in("id", [...new Set((albums ?? []).map((a) => a.user_id))]),
-      ]);
+      const { data: albums } = await supabase
+        .from("photo_albums")
+        .select("id, name, user_id")
+        .in("id", albumIds);
+
+      if (!albums?.length) return [];
+
+      const { data: owners } = await supabase
+        .from("profiles")
+        .select("id,username,display_name")
+        .in("id", [...new Set(albums.map((a) => a.user_id))]);
 
       const ownerPhotos = await Promise.all(
         (albums ?? []).map(async (a) => {

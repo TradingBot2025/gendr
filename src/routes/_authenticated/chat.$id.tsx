@@ -141,7 +141,7 @@ export const Route = createFileRoute("/_authenticated/chat/$id")({
       { title: "Chat — Gender" },
       {
         name: "description",
-        content: "Chat, share and call your match. Messages expire after 24 hours.",
+        content: "Chat, share and call your match. Set a disappearing timer for messages.",
       },
     ],
   }),

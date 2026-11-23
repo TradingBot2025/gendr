@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -23,15 +23,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  ageOf,
-  GENDERS,
-  ORIENTATIONS,
-  useMe,
-  useSigned,
-  logProfileView,
-  reportProfile,
-} from "@/lib/data";
+import { ageOf, useMe, useSigned, logProfileView, reportProfile } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -102,11 +94,17 @@ const REPORT_REASONS = [
   { value: "other", label: "Other", description: "Something not listed here" },
 ];
 
+const PROFILE_COLUMNS =
+  "id,username,display_name,gender,orientation,birthdate,bio,city,country,verified,is_online,last_seen_at,banned,looking_for";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function ProfileView() {
   const { username } = Route.useParams();
   const { data: me } = useMe();
   const uid = me?.user.id;
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportDescription, setReportDescription] = useState("");
@@ -131,24 +129,42 @@ function ProfileView() {
     Record<string, { status: string; id: string }>
   >({});
 
-  const { data: profile } = useQuery({
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    isError: profileError,
+  } = useQuery({
     queryKey: ["profile-view", username],
     enabled: !!uid,
     queryFn: async () => {
-      let { data: p } = await supabase.rpc("get_public_profile", { _user_id: username });
+      // The profiles table is readable by every authenticated user (RLS: non-banned or self),
+      // so we can fetch the profile directly. The route param may be a username or, as a
+      // fallback for legacy profiles without a username, the user's id (UUID).
+      let { data: p } = await supabase
+        .from("profiles")
+        .select(PROFILE_COLUMNS)
+        .eq("username", username)
+        .maybeSingle();
 
-      if (!p) {
-        const { data: pById } = await supabase.rpc("get_public_profile", { _user_id: username });
+      if (!p && UUID_RE.test(username)) {
+        const { data: pById } = await supabase
+          .from("profiles")
+          .select(PROFILE_COLUMNS)
+          .eq("id", username)
+          .maybeSingle();
         p = pById;
       }
 
-      if (!p) return null;
-      const { data: conns } = await supabase.from("connections").select("*");
-      const conn = conns?.find(
-        (c: { requester: string; addressee: string; status: string }) =>
-          (c.requester === uid && c.addressee === p.id) ||
-          (c.requester === p.id && c.addressee === uid),
-      );
+      if (!p || p.banned) return null;
+
+      // Determine the relationship between me and this profile.
+      const { data: conns } = await supabase
+        .from("connections")
+        .select("*")
+        .or(
+          `and(requester.eq.${uid},addressee.eq.${p.id}),and(requester.eq.${p.id},addressee.eq.${uid})`,
+        );
+      const conn = conns?.[0];
       const isConnected = conn?.status === "accepted";
 
       const { data: allPhotos } = await supabase
@@ -163,7 +179,8 @@ function ProfileView() {
         .eq("user_id", p.id)
         .order("created_at", { ascending: false });
 
-      // Fetch album access requests for current user
+      // Fetch my album access requests (for this user's albums) so the UI reflects
+      // pending/approved state on load, not just after clicking in this session.
       const { data: accessRequests } = await supabase
         .from("album_access_requests")
         .select("album_id, status, id")
@@ -198,6 +215,7 @@ function ProfileView() {
         mainPhotos,
         albums: albumsWithPhotos,
         connections: conns ?? [],
+        albumRequests: requestsMap,
         isConnected,
       };
     },
@@ -208,6 +226,18 @@ function ProfileView() {
       logProfileView(profile.profile.id).catch(() => {});
     }
   }, [profile, username, uid]);
+
+  // Sync album-access request state from the query so approved/pending shows on load.
+  useEffect(() => {
+    if (profile?.albumRequests) setAlbumRequests(profile.albumRequests);
+  }, [profile]);
+
+  // If someone opens their own /profile/<self>, send them to the editor.
+  useEffect(() => {
+    if (profile?.profile && profile.profile.id === uid) {
+      void navigate({ to: "/profile/" });
+    }
+  }, [profile, uid, navigate]);
 
   const conn = profile?.connections.find(
     (c: { requester: string; addressee: string; status: string }) =>
@@ -237,16 +267,35 @@ function ProfileView() {
   const showFallbackBlur =
     !isConnected && !hasMainPhotos && fallbackMainPhoto && profile.profile?.id !== uid;
 
+  // Photos we are allowed to render: visible (public, or all when connected) main photos,
+  // plus any album photos the viewer may open (all albums when connected, approved private
+  // albums otherwise), plus the blurred fallback.
+  const viewableAlbumPhotos = albums
+    .filter(
+      (a: { id: string; is_private: boolean }) =>
+        isConnected || !a.is_private || albumRequests[a.id]?.status === "approved",
+    )
+    .flatMap((a: { photos?: { path: string }[] }) => (a.photos ?? []).map((ph) => ph.path));
+
   const photoPaths = [
-    ...visiblePhotos.map((p: { path: string }) => p.path),
+    ...visiblePhotos.map((ph: { path: string }) => ph.path),
+    ...viewableAlbumPhotos,
     ...(fallbackMainPhoto ? [fallbackMainPhoto.path] : []),
   ];
   const urls = useSigned("photos", photoPaths);
-  const previewUrls = useSigned("photo-previews", photoPaths);
+
+  // Blurred previews live in the "photo-previews" bucket keyed by preview_path, NOT path.
+  const previewPaths = (allPhotos ?? [])
+    .map((ph: { preview_path?: string | null }) => ph.preview_path)
+    .filter((v): v is string => !!v);
+  const previewUrls = useSigned("photo-previews", previewPaths);
 
   const p = profile?.profile;
 
-  if (!me) return <div className="flex h-screen items-center justify-center">Loading…</div>;
+  if (!me || profileLoading)
+    return <div className="flex h-screen items-center justify-center">Loading…</div>;
+  if (profileError)
+    return <div className="p-8 text-center text-muted-foreground">Failed to load profile.</div>;
   if (!p) return <div className="p-8 text-center text-muted-foreground">Profile not found.</div>;
   if (p.id === uid)
     return <div className="flex h-screen items-center justify-center">Redirecting…</div>;
@@ -454,15 +503,17 @@ function ProfileView() {
                 onClick={() => handleRequestAlbumAccess(privateAlbumWithPhotos!.id)}
               >
                 <div className="relative h-full w-full">
-                  <img
-                    src={previewUrls[fallbackMainPhoto.path] || urls[fallbackMainPhoto.path] || ""}
-                    alt={`${p.display_name}'s private photo`}
-                    className="h-full w-full object-cover blur-[20px]"
-                    loading="eager"
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
-                  />
+                  {fallbackMainPhoto.preview_path && previewUrls[fallbackMainPhoto.preview_path] ? (
+                    <img
+                      src={previewUrls[fallbackMainPhoto.preview_path]}
+                      alt={`${p.display_name}'s private photo`}
+                      className="h-full w-full object-cover blur-[20px]"
+                      loading="eager"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : null}
                   <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
                     <Lock className="h-12 w-12 text-white/90 mb-3" />
                     <p className="text-white text-lg font-semibold">Private Photos</p>
@@ -518,19 +569,43 @@ function ProfileView() {
                   <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() =>
-                    supabase
-                      .from("connections")
-                      .insert({ requester: uid, addressee: p.id })
-                      .then(() => {
-                        toast.success("Connection request sent");
-                        qc.invalidateQueries({ queryKey: ["discover"] });
-                      })
-                  }
-                >
-                  <UserPlus className="h-4 w-4 mr-2" /> Connect
-                </DropdownMenuItem>
+                {!conn && (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      supabase
+                        .from("connections")
+                        .insert({ requester: uid, addressee: p.id })
+                        .then(({ error }) => {
+                          if (error) {
+                            toast.error(error.message);
+                            return;
+                          }
+                          toast.success("Connection request sent");
+                          qc.invalidateQueries({ queryKey: ["discover"] });
+                          qc.invalidateQueries({ queryKey: ["profile-view", username] });
+                        })
+                    }
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" /> Connect
+                  </DropdownMenuItem>
+                )}
+                {isPending && isOwnRequest && (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      supabase
+                        .from("connections")
+                        .delete()
+                        .eq("id", conn!.id)
+                        .then(() => {
+                          toast.success("Request cancelled");
+                          qc.invalidateQueries({ queryKey: ["profile-view", username] });
+                          qc.invalidateQueries({ queryKey: ["discover"] });
+                        })
+                    }
+                  >
+                    <X className="h-4 w-4 mr-2 text-muted-foreground" /> Cancel request
+                  </DropdownMenuItem>
+                )}
                 {isPending && !isOwnRequest && (
                   <>
                     <DropdownMenuItem
@@ -696,7 +771,7 @@ function ProfileView() {
 
         {/* Albums */}
         {albums.length > 0 && (
-          <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-8">
+          <div className="space-y-4">
             <h3 className="text-2xl font-bold flex items-center gap-2">
               <Image className="h-6 w-6" /> Albums ({albums.length})
             </h3>
@@ -745,16 +820,20 @@ function ProfileView() {
                     >
                       <div className="aspect-[4/5] bg-muted relative">
                         {isPrivateAlbum && hasPhotos ? (
-                          // Show blurred preview from photo-previews bucket
-                          <img
-                            src={firstPreviewUrl || firstPhotoUrl || ""}
-                            alt={album.name}
-                            className="h-full w-full object-cover blur-[20px]"
-                            loading="lazy"
-                            onError={(e) => {
-                              e.currentTarget.style.display = "none";
-                            }}
-                          />
+                          // Show the pre-blurred derivative only — never the original private photo.
+                          firstPreviewUrl ? (
+                            <img
+                              src={firstPreviewUrl}
+                              alt={album.name}
+                              className="h-full w-full object-cover blur-[20px]"
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <div className="h-full w-full bg-muted" />
+                          )
                         ) : firstPhotoUrl ? (
                           <img
                             src={firstPhotoUrl}
@@ -826,7 +905,7 @@ function ProfileView() {
         )}
 
         {/* Additional Info Cards */}
-        <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-8">
+        <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-3xl border bg-card p-6 shadow-soft">
               <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -834,8 +913,8 @@ function ProfileView() {
               </h3>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p>• Only accepted matches can message you</p>
-                <p>• Private photos are visible only to matches</p>
-                <p>• All messages expire after 24 hours</p>
+                <p>• Private photos are visible only to approved viewers</p>
+                <p>• Chat messages can have disappearing timers</p>
                 <p>• Report inappropriate behavior anytime</p>
               </div>
             </div>
@@ -843,21 +922,11 @@ function ProfileView() {
               <h3 className="font-semibold mb-3 flex items-center gap-2">
                 <Heart className="h-5 w-5" /> Looking for
               </h3>
-              <div className="flex flex-wrap gap-1.5">
-                {GENDERS.slice(0, 5).map((g) => (
-                  <span
-                    key={g}
-                    className="rounded-full bg-secondary px-2.5 py-1 text-xs text-secondary-foreground"
-                  >
-                    {g}
-                  </span>
-                ))}
-                {GENDERS.length > 5 && (
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                    +{GENDERS.length - 5} more
-                  </span>
-                )}
-              </div>
+              {p.looking_for ? (
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{p.looking_for}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Not specified yet</p>
+              )}
             </div>
           </div>
         </div>
