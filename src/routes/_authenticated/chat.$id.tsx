@@ -279,6 +279,24 @@ function Chat() {
       ).data ?? [],
   });
 
+  // Mark incoming messages as read while this chat is open (and whenever new ones
+  // arrive). Without this, read_at stayed null forever and the inbox kept showing
+  // an unread badge for conversations the user had already read.
+  useEffect(() => {
+    if (!id || !uid || !msgs || msgs.length === 0) return;
+    const hasUnread = msgs.some((m) => m.sender !== uid && !m.read_at);
+    if (!hasUnread) return;
+    supabase
+      .from("messages")
+      .update({ read_at: new Date().toISOString() })
+      .eq("connection_id", id)
+      .neq("sender", uid)
+      .is("read_at", null)
+      .then(({ error }) => {
+        if (!error) qc.invalidateQueries({ queryKey: ["inbox"] });
+      });
+  }, [msgs, id, uid, qc]);
+
   // Fetch user's albums with photos for album picker
   const { data: myAlbums } = useMyAlbumsWithPhotos();
 
@@ -592,6 +610,29 @@ function Chat() {
         >
           <Video />
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="shrink-0"
+              aria-label="Disappearing messages"
+            >
+              <Clock className="h-5 w-5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+              Disappearing messages
+            </div>
+            {DISAPPEAR_OPTIONS.map((o) => (
+              <DropdownMenuItem key={o.value} onClick={() => setChatTimer(o.value)}>
+                {o.label}
+                {disappearSeconds === o.value && <Check className="ml-auto h-4 w-4" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
