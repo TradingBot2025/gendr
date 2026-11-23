@@ -13,10 +13,12 @@ import {
   Eye,
   MoreHorizontal,
   User,
+  UserPlus,
   Flag,
   UserX,
   FileText,
   Star,
+  Trash2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -127,6 +129,8 @@ function Messages() {
   const [reportTargetName, setReportTargetName] = useState("");
   // Inbox filter chip: all | unread | favorite | online
   const [filter, setFilter] = useState<"all" | "unread" | "favorite" | "online">("all");
+  // Collapse the album-requests panel so the inbox stays the focus.
+  const [albumOpen, setAlbumOpen] = useState(true);
   // Favorites are a client-side concept (no DB table); persisted in localStorage.
   const [favorites, setFavorites] = useState<Set<string>>(() => {
     try {
@@ -148,6 +152,9 @@ function Messages() {
   const { data: inboxData, isLoading: inboxLoading } = useQuery({
     queryKey: ["inbox", uid],
     enabled: !!uid,
+    // Refresh periodically so read badges clear after a chat marks messages read,
+    // and so online dots reflect presence changes without a manual reload.
+    refetchInterval: 15000,
     queryFn: async () => {
       const { data: conns } = await supabase
         .from("connections")
@@ -208,7 +215,13 @@ function Messages() {
             lastMessage: msg,
             photo: firstPhoto[pid],
             unreadCount: unreadCount[c.id] ?? 0,
-            isOnline: !!profile?.is_online,
+            // Treat as online if the flag is set, or if they were active in the last
+            // 5 minutes (is_online can be stale when a tab closes without firing the
+            // visibility handler, so last_seen_at is a more reliable fallback).
+            isOnline:
+              !!profile?.is_online ||
+              (!!profile?.last_seen_at &&
+                Date.now() - new Date(profile.last_seen_at).getTime() < 5 * 60 * 1000),
           };
         })
         .filter((x) => x.profile);
@@ -390,10 +403,7 @@ function Messages() {
   // Revoke an approved album access grant (delete the request so access is removed).
   const handleRevokeAccess = async (requestId: string) => {
     if (!confirm("Revoke access? This person will no longer be able to view the album.")) return;
-    const { error } = await supabase
-      .from("album_access_requests")
-      .delete()
-      .eq("id", requestId);
+    const { error } = await supabase.from("album_access_requests").delete().eq("id", requestId);
     if (error) {
       toast.error(error.message);
       return;
@@ -401,6 +411,48 @@ function Messages() {
     toast.success("Access revoked");
     qc.invalidateQueries({ queryKey: ["album-requests-incoming"] });
     qc.invalidateQueries({ queryKey: ["album-requests-mine"] });
+  };
+
+  // Mark every incoming message in a conversation as read (double-click / menu).
+  const markRead = async (connectionId: string) => {
+    if (!uid) return;
+    const { error } = await supabase
+      .from("messages")
+      .update({ read_at: new Date().toISOString() })
+      .eq("connection_id", connectionId)
+      .neq("sender", uid)
+      .is("read_at", null);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    qc.invalidateQueries({ queryKey: ["inbox"] });
+  };
+
+  // Delete every message in all of my conversations. RLS may only allow deleting
+  // messages I sent, so fall back to that if a full delete is rejected.
+  const deleteAllMessages = async () => {
+    const ids = (inboxData ?? []).map((d) => d.connection.id);
+    if (!ids.length) {
+      toast.info("There are no messages to delete.");
+      return;
+    }
+    if (!confirm("Delete all messages in all your conversations? This cannot be undone.")) return;
+    const { error } = await supabase.from("messages").delete().in("connection_id", ids);
+    if (error) {
+      // Retry deleting only my own messages if deleting across users is blocked.
+      const retry = await supabase
+        .from("messages")
+        .delete()
+        .in("connection_id", ids)
+        .eq("sender", uid ?? "");
+      if (retry.error) {
+        toast.error(retry.error.message);
+        return;
+      }
+    }
+    toast.success("All messages deleted");
+    qc.invalidateQueries({ queryKey: ["inbox"] });
   };
 
   const handleProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -475,122 +527,154 @@ function Messages() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
-      <h1 className="mb-6 text-4xl font-bold">Messages</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-bold sm:text-4xl">Messages</h1>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/referrals">
+              <UserPlus className="h-4 w-4" />
+              <span className="ml-2">Refer a friend</span>
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={deleteAllMessages}
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="ml-2 hidden sm:inline">Delete all</span>
+          </Button>
+        </div>
+      </div>
 
       {/* Album Requests Section */}
       {hasAlbumRequests && (
         <section className="mb-8 space-y-4 rounded-3xl border bg-card p-6 shadow-soft">
-          <h2 className="text-2xl font-bold flex items-center gap-2">
-            <Lock className="h-5 w-5" /> Album Requests
-          </h2>
+          <button
+            type="button"
+            onClick={() => setAlbumOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 text-left"
+          >
+            <h2 className="flex items-center gap-2 text-2xl font-bold">
+              <Lock className="h-5 w-5" /> Album Requests
+            </h2>
+            <span className="text-sm font-medium text-muted-foreground">
+              {albumOpen ? "Hide" : "Show"}
+            </span>
+          </button>
 
-          {/* Incoming requests for my albums */}
-          {albumRequests.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Requests for your albums
-              </h3>
-              {albumRequests.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-background border"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                      {r.requester_photo ? (
-                        <img
-                          src={urls[r.requester_photo] || ""}
-                          alt={r.requester_name}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-2xl font-bold">{r.requester_name?.[0]}</span>
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-medium">{r.requester_name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        requested access to "{r.album_name}"
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(r.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {r.status === "pending" && (
-                      <>
-                        <Button variant="success" size="sm" onClick={() => handleApprove(r.id)}>
-                          <Check className="h-3 w-3 mr-1" /> Approve
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDecline(r.id)}>
-                          <X className="h-3 w-3 mr-1" /> Decline
-                        </Button>
-                      </>
-                    )}
-                    {r.status === "approved" && (
-                      <div className="flex items-center gap-2">
-                        <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
-                          <Check className="h-3 w-3" /> Approved
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRevokeAccess(r.id)}
-                        >
-                          <UserX className="h-3 w-3 mr-1" /> Revoke
-                        </Button>
+          {albumOpen && (
+            <>
+              {/* Incoming requests for my albums */}
+              {albumRequests.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    Requests for your albums
+                  </h3>
+                  {albumRequests.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-background border"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                          {r.requester_photo ? (
+                            <img
+                              src={urls[r.requester_photo] || ""}
+                              alt={r.requester_name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-2xl font-bold">{r.requester_name?.[0]}</span>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium">{r.requester_name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            requested access to "{r.album_name}"
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(r.created_at).toLocaleString()}
+                          </p>
+                        </div>
                       </div>
-                    )}
-                    {r.status === "declined" && (
-                      <span className="flex items-center gap-1 text-red-600 text-sm font-medium">
-                        <X className="h-3 w-3" /> Declined
-                      </span>
-                    )}
-                  </div>
+                      <div className="flex items-center gap-2">
+                        {r.status === "pending" && (
+                          <>
+                            <Button variant="success" size="sm" onClick={() => handleApprove(r.id)}>
+                              <Check className="h-3 w-3 mr-1" /> Approve
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => handleDecline(r.id)}>
+                              <X className="h-3 w-3 mr-1" /> Decline
+                            </Button>
+                          </>
+                        )}
+                        {r.status === "approved" && (
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
+                              <Check className="h-3 w-3" /> Approved
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRevokeAccess(r.id)}
+                            >
+                              <UserX className="h-3 w-3 mr-1" /> Revoke
+                            </Button>
+                          </div>
+                        )}
+                        {r.status === "declined" && (
+                          <span className="flex items-center gap-1 text-red-600 text-sm font-medium">
+                            <X className="h-3 w-3" /> Declined
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
+              )}
 
-          {/* My approved requests */}
-          {myApprovedRequests.length > 0 && (
-            <div className="space-y-3 pt-4 border-t">
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Your approved requests
-              </h3>
-              {myApprovedRequests.map((r) => (
-                <div
-                  key={r.album_id}
-                  className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-background border"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                      {r.owner_photo ? (
-                        <img
-                          src={urls[r.owner_photo] || ""}
-                          alt={r.owner_name}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-2xl font-bold">{r.owner_name?.[0]}</span>
-                      )}
+              {/* My approved requests */}
+              {myApprovedRequests.length > 0 && (
+                <div className="space-y-3 pt-4 border-t">
+                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    Your approved requests
+                  </h3>
+                  {myApprovedRequests.map((r) => (
+                    <div
+                      key={r.album_id}
+                      className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-background border"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                          {r.owner_photo ? (
+                            <img
+                              src={urls[r.owner_photo] || ""}
+                              alt={r.owner_name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-2xl font-bold">{r.owner_name?.[0]}</span>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium">{r.owner_name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            approved your request for "{r.album_name}"
+                          </p>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to="/profile/$username" params={{ username: r.owner_id }}>
+                          <Eye className="h-3 w-3 mr-1" /> View Profile
+                        </Link>
+                      </Button>
                     </div>
-                    <div>
-                      <p className="font-medium">{r.owner_name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        approved your request for "{r.album_name}"
-                      </p>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link to="/profile/$username" params={{ username: r.owner_id }}>
-                      <Eye className="h-3 w-3 mr-1" /> View Profile
-                    </Link>
-                  </Button>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </section>
       )}
@@ -626,11 +710,18 @@ function Messages() {
           <MessageCircle className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
           <h2 className="text-xl font-semibold">No conversations yet</h2>
           <p className="mt-2 text-muted-foreground">
-            Connect with someone on Discover to start chatting.
+            Connect with someone on Discover to start chatting, or invite a friend to join.
           </p>
-          <Button asChild className="mt-6">
-            <Link to="/discover">Discover people</Link>
-          </Button>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <Button asChild>
+              <Link to="/discover">Discover people</Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/referrals">
+                <UserPlus className="h-4 w-4 mr-2" /> Refer a friend
+              </Link>
+            </Button>
+          </div>
         </div>
       ) : filteredInbox.length === 0 ? (
         <div className="rounded-3xl border bg-card p-12 text-center text-muted-foreground">
@@ -732,6 +823,11 @@ function Messages() {
                       />
                       {isFavorite ? "Remove from favorites" : "Add to favorites"}
                     </DropdownMenuItem>
+                    {unread > 0 && (
+                      <DropdownMenuItem onClick={() => markRead(d.connection.id)}>
+                        <Check className="h-4 w-4 mr-2" /> Mark as read
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                       onClick={() => {
                         setReportTargetId(d.profile.id);
