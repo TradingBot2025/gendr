@@ -6,6 +6,7 @@ import { BadgeCheck, Camera, ImagePlus, Star, Trash2, Lock, Clock, Plus } from "
 import { ProfileCard } from "@/components/app/ProfileCard";
 import { supabase } from "@/integrations/supabase/client";
 import { GENDERS, ORIENTATIONS, useMe, useSigned, usePhotoAlbums, type PhotoAlbum } from "@/lib/data";
+import { uploadBlurredPreview } from "@/lib/photo-previews";
 import { verifyFace } from "@/lib/verify.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,7 @@ export const Route = createFileRoute("/_authenticated/profile")({
 function ProfilePage() {
   const { data: me } = useMe();
   const qc = useQueryClient();
-  const [form, setForm] = useState({ display_name: "", username: "", gender: "", orientation: "", birthdate: "", city: "", country: "", bio: "" });
+  const [form, setForm] = useState({ display_name: "", username: "", gender: "", orientation: "", birthdate: "", city: "", country: "", bio: "", looking_for: "" });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
@@ -34,12 +35,30 @@ function ProfilePage() {
 
   useEffect(() => {
     const p = me?.profile;
-    if (p) setForm({ display_name: p.display_name ?? "", username: p.username ?? "", gender: p.gender ?? "", orientation: p.orientation ?? "", birthdate: p.birthdate ?? "", city: p.city ?? "", country: p.country ?? "", bio: p.bio ?? "" });
+    if (p) setForm({ display_name: p.display_name ?? "", username: p.username ?? "", gender: p.gender ?? "", orientation: p.orientation ?? "", birthdate: p.birthdate ?? "", city: p.city ?? "", country: p.country ?? "", bio: p.bio ?? "", looking_for: p.looking_for ?? "" });
   }, [me?.profile]);
 
   const photos = me?.photos ?? [];
   const { data: albums } = usePhotoAlbums();
   const urls = useSigned("photos", photos.map((p) => p.path));
+  useEffect(() => {
+    if (!me) return;
+    let alive = true;
+    const generate = async () => {
+      for (const photo of me.photos.filter(p => !p.preview_path)) {
+        try {
+          const { data, error } = await supabase.storage.from("photos").download(photo.path);
+          if (error || !data || !alive) continue;
+          const preview_path = await uploadBlurredPreview(me.user.id, data);
+          const result = await supabase.from("photos").update({ preview_path }).eq("id", photo.id);
+          if (result.error) throw result.error;
+        } catch { /* Originals remain private even when preview generation fails. */ }
+      }
+      if (alive && me.photos.some(p => !p.preview_path)) void qc.invalidateQueries({ queryKey: ["photo-covers"] });
+    };
+    void generate();
+    return () => { alive = false; };
+  }, [me?.user.id, me?.photos.length, qc]);
   if (!me) return null;
   const refresh = () => qc.invalidateQueries({ queryKey: ["me"] });
   const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -58,7 +77,7 @@ function ProfilePage() {
       display_name: form.display_name.trim().slice(0, 60), 
       username: form.username?.trim() || null,
       gender: form.gender || null, orientation: form.orientation || null,
-      birthdate: form.birthdate || null, city: form.city.trim().slice(0, 80) || null, country: form.country.trim().slice(0, 80) || null, bio: form.bio.trim().slice(0, 500) || null,
+      birthdate: form.birthdate || null, city: form.city.trim().slice(0, 80) || null, country: form.country.trim().slice(0, 80) || null, bio: form.bio.trim().slice(0, 500) || null, looking_for: form.looking_for.trim().slice(0, 500) || null,
     }).eq("id", me.user.id);
     setSaving(false);
     if (error) { toast.error(error.message); }
@@ -78,6 +97,7 @@ function ProfilePage() {
     if (error) { toast.error(error.message); return; }
     setNewAlbum(""); setAlbumOpen(false);
     refresh();
+    qc.invalidateQueries({ queryKey: ["photo-albums"] });
   };
 
   const upload = async (files: FileList | null) => {
@@ -92,24 +112,35 @@ function ProfilePage() {
       const path = `${me.user.id}/${crypto.randomUUID()}.${f.name.split(".").pop() ?? "jpg"}`;
       const { error } = await supabase.storage.from("photos").upload(path, f, { contentType: f.type });
       if (error) { toast.error(error.message); continue; }
-      const { error: e2 } = await supabase.from("photos").insert({ user_id: me.user.id, path, position: pos++, album_id: uploadAlbum || null, is_private: !!uploadAlbum, view_timer: uploadTimer });
+      let preview_path: string | null = null;
+      try { preview_path = await uploadBlurredPreview(me.user.id, f); } catch { toast.error("Blurred preview could not be created; the original stays private."); }
+      const { error: e2 } = await supabase.from("photos").insert({ preview_path, user_id: me.user.id, path, position: pos++, album_id: uploadAlbum || null, is_private: !!uploadAlbum, view_timer: uploadTimer });
       if (e2) { toast.error(e2.message); await supabase.storage.from("photos").remove([path]); }
     }
     setUploading(false);
     setUploadAlbum(null); setUploadTimer("normal");
     if (fileRef.current) fileRef.current.value = "";
     refresh();
+    qc.invalidateQueries({ queryKey: ["photo-covers"] });
+    qc.invalidateQueries({ queryKey: ["albums"] });
+    toast.success("Photos uploaded");
   };
 
   const remove = async (id: string, path: string) => {
-    await supabase.from("photos").delete().eq("id", id);
+    const { error } = await supabase.from("photos").delete().eq("id", id);
+    if (error) { toast.error(error.message); return; }
     await supabase.storage.from("photos").remove([path]);
     refresh();
   };
   const makeMain = async (id: string) => {
-    const order = [photos.find((p) => p.id === id)!, ...photos.filter((p) => p.id !== id)];
-    await Promise.all(order.map((p, i) => supabase.from("photos").update({ position: i }).eq("id", p.id)));
+    const selected = photos.find(p => p.id === id);
+    if (!selected) return;
+    const order = [selected, ...photos.filter((p) => p.id !== id)];
+    const results = await Promise.all(order.map((p, i) => supabase.from("photos").update({ position: i }).eq("id", p.id)));
+    const failure = results.find(result => result.error);
+    if (failure?.error) toast.error(failure.error.message);
     refresh();
+    qc.invalidateQueries({ queryKey: ["photo-covers"] });
   };
 
   return (
@@ -125,17 +156,18 @@ function ProfilePage() {
       {!me.complete && <p className="rounded-2xl bg-accent p-4 text-sm text-accent-foreground">Fill in your name, gender, orientation, birthday, city and add at least one photo to unlock the app.</p>}
 
       <section className="rounded-3xl border bg-card p-6 shadow-soft">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold">Photos ({photos.length}/6)</h2>
-            <p className="text-xs text-muted-foreground">Add to a private album to share only with matches. Set a disappearing timer (10s / 15s).</p>
+            <p className="text-xs text-muted-foreground">Private albums require your separate approval. Set a disappearing timer (10s / 15s).</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => setAlbumOpen(true)} disabled={photos.length >= 6}><Plus className="h-3 w-3 mr-1" />New album</Button>
             <Button variant="outline" disabled={uploading || photos.length >= 6} onClick={() => fileRef.current?.click()}><ImagePlus />{uploading ? "Uploading…" : "Add photos"}</Button>
             <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => upload(e.target.files)} />
           </div>
         </div>
+        <div className="mb-4 space-y-2"><Label>Upload destination</Label><Select value={uploadAlbum ?? "main"} onValueChange={v => setUploadAlbum(v === "main" ? null : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="main">Main photos (public)</SelectItem>{albums?.filter(a => a.user_id === me.user.id).map(a => <SelectItem key={a.id} value={a.id}>{a.name} (private)</SelectItem>)}</SelectContent></Select></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {photos.map((p, i) => (
             <div key={p.id} className="group relative aspect-[4/5] overflow-hidden rounded-2xl bg-muted">
@@ -167,6 +199,7 @@ function ProfilePage() {
         <div className="space-y-1.5"><Label>City</Label><Input value={form.city} onChange={(e) => set("city")(e.target.value)} maxLength={80} /></div>
         <div className="space-y-1.5"><Label>Country</Label><Input value={form.country} onChange={(e) => set("country")(e.target.value)} maxLength={80} /></div>
         <div className="space-y-1.5 sm:col-span-2"><Label>About me</Label><Textarea value={form.bio} onChange={(e) => set("bio")(e.target.value)} maxLength={500} rows={4} /></div>
+        <div className="space-y-1.5 sm:col-span-2"><Label>Looking for</Label><Textarea value={form.looking_for} onChange={e => set("looking_for")(e.target.value)} maxLength={500} rows={3} /></div>
         <Button type="submit" variant="hero" disabled={saving} className="sm:col-span-2">{saving ? "Saving…" : "Save profile"}</Button>
       </form>
 
@@ -176,7 +209,7 @@ function ProfilePage() {
           <DialogHeader><DialogTitle>New private album</DialogTitle></DialogHeader>
           <form onSubmit={createAlbum} className="space-y-4 p-4">
             <div className="space-y-1.5"><Label>Album name</Label><Input value={newAlbum} onChange={(e) => setNewAlbum(e.target.value)} placeholder="e.g. Private moments" /></div>
-            <p className="text-xs text-muted-foreground">Photos in this album are visible only to your accepted matches.</p>
+            <p className="text-xs text-muted-foreground">Only viewers you approve for this album can see the originals.</p>
             <Button type="submit" variant="hero" className="w-full">Create album</Button>
           </form>
         </DialogContent>
@@ -199,7 +232,9 @@ function VerifyDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenCha
   const capture = async () => {
     const v = video.current; if (!v?.videoWidth) return;
     const c = document.createElement("canvas"); c.width = 640; c.height = Math.round((640 * v.videoHeight) / v.videoWidth);
-    c.getContext("2d")!.drawImage(v, 0, 0, c.width, c.height);
+    const context = c.getContext("2d");
+    if (!context) return;
+    context.drawImage(v, 0, 0, c.width, c.height);
     setBusy(true);
     try {
       const r = await verifyFace({ data: { selfie: c.toDataURL("image/jpeg", 0.85) } });

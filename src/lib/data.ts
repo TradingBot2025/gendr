@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { coverPhoto } from "@/lib/photo-visibility";
 import type { Tables } from "@/integrations/supabase/types";
 
-export type Profile = Tables<"profiles">;
+export type Profile = Pick<Tables<"profiles">, "id" | "display_name" | "birthdate" | "gender" | "orientation" | "bio" | "city" | "country" | "verified">;
 export type Photo = Tables<"photos">;
 export type Connection = Tables<"connections">;
 export type Message = Tables<"messages">;
@@ -76,7 +77,7 @@ export function useSigned(bucket: string, paths: (string | null | undefined)[]) 
   const [urls, setUrls] = useState<Record<string, string>>({});
   useEffect(() => {
     const list = paths.filter((p): p is string => !!p);
-    if (!list.length) return;
+    if (!list.length) { setUrls({}); return; }
     let alive = true;
     signPaths(bucket, list).then((u) => alive && setUrls(u));
     return () => { alive = false; };
@@ -117,15 +118,16 @@ export function useMyAlbumsWithPhotos() {
     queryKey: ["my-albums-photos", me?.user.id],
     enabled: !!me,
     queryFn: async () => {
+      if (!me) return [];
       const [{ data: albums }, { data: photos }] = await Promise.all([
-        supabase.from("photo_albums").select("*").eq("user_id", me!.user.id).order("created_at", { ascending: false }),
-        supabase.from("photos").select("id,path,album_id,is_private,view_timer,position").eq("user_id", me!.user.id).order("position"),
+        supabase.from("photo_albums").select("*").eq("user_id", me.user.id).order("created_at", { ascending: false }),
+        supabase.from("photos").select("id,path,album_id,is_private,view_timer,position").eq("user_id", me.user.id).order("position"),
       ]);
       const byAlbum: Record<string, typeof photos> = {};
       (photos ?? []).forEach((p) => {
         const k = p.album_id ?? "none";
         if (!byAlbum[k]) byAlbum[k] = [];
-        byAlbum[k].push(p);
+        byAlbum[k]?.push(p);
       });
       return (albums ?? []).map((a) => ({ ...a, photos: byAlbum[a.id] ?? [] }));
     },
@@ -174,14 +176,20 @@ export function useAdsPlacements() {
 
 /* ---------- Actions ---------- */
 
+async function currentUserId() {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) throw new Error("Please sign in");
+  return data.user.id;
+}
+
 export async function logProfileView(viewedId: string) {
-  const { error } = await supabase.from("profile_views").insert({ viewer_id: (await supabase.auth.getUser()).data.user!.id, viewed_id: viewedId });
+  const { error } = await supabase.from("profile_views").insert({ viewer_id: await currentUserId(), viewed_id: viewedId });
   if (error) throw error;
 }
 
 export async function reportProfile(reportedId: string, reason: string, options?: { reasonCategory?: string; proofText?: string; proofFilePath?: string; autoBlock?: boolean }) {
   const { error } = await supabase.from("reports").insert({ 
-    reporter_id: (await supabase.auth.getUser()).data.user!.id, 
+    reporter_id: await currentUserId(), 
     reported_id: reportedId, 
     reason,
     reason_category: options?.reasonCategory ?? null,
@@ -193,7 +201,7 @@ export async function reportProfile(reportedId: string, reason: string, options?
 }
 
 export async function createReferral(code: string) {
-  const { error } = await supabase.from("referrals").insert({ code });
+  const { error } = await supabase.from("referrals").insert({ code, referrer_id: await currentUserId() });
   if (error) throw error;
 }
 
@@ -203,6 +211,22 @@ export async function adminSetFlags(targetId: string, verified: boolean, banned:
 }
 
 export async function adminRecordAction(targetId: string, actionType: "ban" | "unban" | "verify" | "unverify" | "delete", details?: string) {
-  const { error } = await supabase.from("admin_actions").insert({ admin_id: (await supabase.auth.getUser()).data.user!.id, target_id: targetId, action_type: actionType, details });
+  const { error } = await supabase.from("admin_actions").insert({ admin_id: await currentUserId(), target_id: targetId, action_type: actionType, details: details ?? null });
   if (error) throw error;
+}
+
+export function useCoverPhoto(userId: string) {
+  const { data: me } = useMe();
+  const { data: photos = [] } = useQuery({
+    queryKey: ["photo-covers"], enabled: !!me,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("photos").select("user_id,path,preview_path,is_private,album_id,position").order("position");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const cover = coverPhoto(photos.filter(p => p.user_id === userId));
+  const original = useSigned("photos", [cover.blurred ? null : cover.path]);
+  const preview = useSigned("photo-previews", [cover.blurred ? cover.path : null]);
+  return { url: cover.path ? (cover.blurred ? preview[cover.path] : original[cover.path]) : undefined, blurred: cover.blurred };
 }

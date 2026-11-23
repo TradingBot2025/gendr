@@ -82,6 +82,9 @@ export function playRingingSound(): void {
   const playRing = () => {
     const segment = ringPattern[patternIndex];
     
+    if (!segment) return;
+    if (ringingOscillator) { try { ringingOscillator.stop(); ringingOscillator.disconnect(); } catch {} ringingOscillator = null; }
+    if (ringingGain) { ringingGain.disconnect(); ringingGain = null; }
     if (segment.on) {
       try {
         const oscillator = ctx.createOscillator();

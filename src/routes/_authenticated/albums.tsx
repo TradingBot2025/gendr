@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -33,21 +33,22 @@ function Albums() {
     queryKey: ["albums", me?.user.id],
     enabled: !!me,
     queryFn: async () => {
+      if (!me) return [];
       const [{ data: alb }, { data: photos }] = await Promise.all([
-        supabase.from("photo_albums").select("*").eq("user_id", me!.user.id).order("created_at", { ascending: false }),
-        supabase.from("photos").select("id,path,album_id,is_private,view_timer,position").eq("user_id", me!.user.id).order("position"),
+        supabase.from("photo_albums").select("*").eq("user_id", me?.user.id ?? "").order("created_at", { ascending: false }),
+        supabase.from("photos").select("id,path,album_id,is_private,view_timer,position").eq("user_id", me?.user.id ?? "").order("position"),
       ]);
       const byAlbum: Record<string, typeof photos> = {};
       (photos ?? []).forEach((p) => {
         const k = p.album_id ?? "none";
         if (!byAlbum[k]) byAlbum[k] = [];
-        byAlbum[k].push(p);
+        byAlbum[k]?.push(p);
       });
       // Create a "Main photos" pseudo-album for photos not in any album
       const mainPhotos = byAlbum["none"] ?? [];
       const albumList = (alb ?? []).map((a) => ({ ...a, photos: byAlbum[a.id] ?? [] }));
       if (mainPhotos.length > 0) {
-        albumList.unshift({ id: "none", name: "Main photos", is_private: false, created_at: "", photos: mainPhotos });
+        albumList.unshift({ id: "none", name: "Main photos", is_private: false, created_at: "", user_id: me?.user.id ?? "", photos: mainPhotos });
       }
       return albumList;
     },
@@ -58,7 +59,7 @@ function Albums() {
     e.preventDefault();
     if (!newName.trim()) return;
     setCreating(true);
-    const { error } = await supabase.from("photo_albums").insert({ user_id: me!.user.id, name: newName.trim(), is_private: true });
+    const { error } = await supabase.from("photo_albums").insert({ user_id: me?.user.id ?? "", name: newName.trim(), is_private: true });
     setCreating(false);
     if (error) { toast.error(error.message); return; }
     setNewName(""); setOpen(false);
@@ -66,6 +67,7 @@ function Albums() {
   };
 
   const remove = async (id: string) => {
+    if (albumsData?.find(a => a.id === id)?.photos.length) { toast.error("Move or delete the photos before deleting this album"); return; }
     setDeletingId(id);
     const { error } = await supabase.from("photo_albums").delete().eq("id", id);
     setDeletingId(null);
@@ -88,6 +90,8 @@ function Albums() {
     setMovePhotoId(null);
     setMoveAlbumId(null);
     qc.invalidateQueries({ queryKey: ["albums"] });
+    qc.invalidateQueries({ queryKey: ["me"] });
+    qc.invalidateQueries({ queryKey: ["photo-covers"] });
   };
 
   const handleDragStart = (e: React.DragEvent, photoId: string, albumId: string | null) => {
@@ -130,6 +134,18 @@ function Albums() {
     setDragOverAlbum(null);
   };
 
+  const { data: access = [] } = useQuery({
+    queryKey: ["album-access", me?.user.id], enabled: !!me,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("album_access_requests").select("*,requester:profiles!album_access_requests_requester_id_fkey(display_name)").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const respondAccess = async (id: string, status: "approved" | "declined") => {
+    const { error } = await supabase.from("album_access_requests").update({ status }).eq("id", id);
+    if (error) toast.error(error.message); else { toast.success(status === "approved" ? "Album access approved" : "Album access revoked"); void qc.invalidateQueries({ queryKey: ["album-access"] }); }
+  };
   if (!me) return null;
 
   return (
@@ -137,16 +153,18 @@ function Albums() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold">Private albums</h1>
-          <p className="text-muted-foreground">Private albums are only visible to your accepted matches. You control who sees them.</p>
+          <p className="text-muted-foreground">Approve each viewer separately for each private album.</p>
         </div>
         <Button variant="hero" onClick={() => setOpen(true)}><Plus />New album</Button>
       </div>
+
+      <section className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Album access</h2><Button asChild variant="outline"><Link to="/profile">Add photos</Link></Button></div>{access.filter(r => albumsData?.some(a => a.id === r.album_id)).length === 0 && <p className="text-sm text-muted-foreground">No access requests yet.</p>}{access.filter(r => albumsData?.some(a => a.id === r.album_id)).map(r => <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3"><div><p className="font-medium">{r.requester?.display_name ?? "Member"} · {albumsData?.find(a => a.id === r.album_id)?.name}</p><p className="text-sm text-muted-foreground">{r.status}</p></div><div className="flex gap-2">{r.status === "pending" && <Button size="sm" onClick={() => respondAccess(r.id,"approved")}>Approve</Button>}{r.status !== "declined" && <Button size="sm" variant="outline" onClick={() => respondAccess(r.id,"declined")}>{r.status === "approved" ? "Revoke" : "Decline"}</Button>}</div></div>)}</section>
 
       {albumsData?.length === 0 ? (
         <div className="rounded-3xl border border-dashed bg-card p-16 text-center">
           <ShieldCheck className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
           <h3 className="text-lg font-semibold">No private albums yet</h3>
-          <p className="text-sm text-muted-foreground">Create a private album and add photos to share only with matches.</p>
+          <p className="text-sm text-muted-foreground">Create a private album and approve who can view it.</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -190,7 +208,7 @@ function Albums() {
                     </div>
                   ))}
                 </div>
-                <Button size="sm" variant="destructive" disabled={deletingId === a.id} onClick={() => remove(a.id)} className="mt-3 w-full">{deletingId === a.id ? "Deleting…" : "Delete album"}</Button>
+                {a.id !== "none" && <Button size="sm" variant="destructive" disabled={deletingId === a.id} onClick={() => remove(a.id)} className="mt-3 w-full">{deletingId === a.id ? "Deleting…" : "Delete album"}</Button>}
               </div>
             );
           })}
@@ -227,7 +245,7 @@ function Albums() {
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => { setShowMoveDialog(false); setMovePhotoId(null); setMoveAlbumId(null); }}>Cancel</Button>
-                <Button className="flex-1" onClick={() => movePhoto(movePhotoId!, moveAlbumId === "none" ? null : moveAlbumId!)} disabled={!movePhotoId}>Move</Button>
+                <Button className="flex-1" onClick={() => movePhotoId && movePhoto(movePhotoId, moveAlbumId === "none" ? null : moveAlbumId)} disabled={!movePhotoId}>Move</Button>
               </div>
             </div>
           </DialogContent>

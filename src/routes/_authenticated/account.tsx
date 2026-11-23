@@ -1,5 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { deleteAccount } from "@/lib/delete-account.functions";
 import { useMe } from "@/lib/data";
@@ -8,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, FileText, ShieldCheck } from "lucide-react";
+import { Trash2, FileText, ShieldCheck, User, Album, Users, Shield, LogOut } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/_authenticated/account")({
@@ -18,6 +19,9 @@ export const Route = createFileRoute("/_authenticated/account")({
 
 function Account() {
   const { data: me } = useMe();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const signOut = async () => { await qc.cancelQueries(); qc.clear(); await supabase.auth.signOut(); await navigate({ to: "/auth", replace: true }); };
   const [password, setPassword] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -28,10 +32,9 @@ function Account() {
     if (!password) { toast.error("Please enter your password"); return; }
     setDeleting(true);
     try {
-      const { error } = await deleteAccount({ data: { password } });
-      if (error) throw error;
+      await deleteAccount({ data: { password } });
       toast.success("Account deleted");
-      await supabase.auth.signOut();
+      await signOut();
     } catch (err: any) {
       toast.error(err.message ?? "Delete failed");
     } finally {
@@ -49,15 +52,23 @@ function Account() {
         <p className="text-muted-foreground">Manage your Gender account and privacy.</p>
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Button asChild variant="outline" className="justify-start"><Link to="/profile"><User />Edit profile</Link></Button>
+        <Button asChild variant="outline" className="justify-start"><Link to="/albums"><Album />Private albums & access</Link></Button>
+        <Button asChild variant="outline" className="justify-start"><Link to="/referrals"><Users />Invite friends</Link></Button>
+        {me.isAdmin && <Button asChild variant="outline" className="justify-start"><Link to="/admin"><Shield />Administration</Link></Button>}
+        <Button variant="outline" className="justify-start" onClick={signOut}><LogOut />Sign out</Button>
+      </div>
+
       <section className="rounded-3xl border bg-card p-6 shadow-soft">
         <div className="mb-6 flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
           <h2 className="text-xl font-semibold">Privacy & data</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
-          Your chats are end-to-end encrypted and automatically deleted 24 hours after they are sent, from both the app and our database. Nothing is visible after 24 hours.
+          Your chats are restricted to accepted matches and hidden when their expiry time is reached.
         </p>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button variant="outline" onClick={() => setPolicyOpen(true)} className="flex-1"><FileText className="h-4 w-4 mr-2" />Privacy policy</Button>
           <Button asChild variant="outline" className="flex-1"><Link to="/terms"><FileText className="h-4 w-4 mr-2" />Terms &amp; conditions</Link></Button>
           <Button variant="outline" onClick={() => setDeleteOpen(true)} className="flex-1"><Trash2 className="h-4 w-4 mr-2" />Delete account</Button>
@@ -93,8 +104,8 @@ function Account() {
           <DialogHeader><DialogTitle>Privacy policy</DialogTitle></DialogHeader>
           <div className="space-y-3 p-4 text-sm text-muted-foreground">
             <p><strong>1. Information we collect.</strong> Name, email, gender, orientation, birthday, location, photos and chat messages you choose to share.</p>
-            <p><strong>2. End-to-end encryption.</strong> All chats are end-to-end encrypted. Messages and media are deleted 24 hours after being sent, from both your device and our database.</p>
-            <p><strong>3. Photos.</strong> Public photos are visible to everyone. Private albums are visible only to matches you accept. Disappearing photos (10s / 15s) vanish after the timer you set.</p>
+            <p><strong>2. Chat privacy.</strong> Only accepted matches can read your chats. Messages are hidden after their expiry time.</p>
+            <p><strong>3. Photos.</strong> Public photos are visible to everyone. Private album originals require your separate approval for each viewer. Disappearing photos (10s / 15s) vanish after the timer you set.</p>
             <p><strong>4. Face verification.</strong> Your selfie is compared to your profile photos solely to issue a verification badge. It is not shared with third parties.</p>
             <p><strong>5. Account deletion.</strong> You may delete your account at any time by confirming your password. All personal data is erased.</p>
             <p><strong>6. Ads.</strong> Advertisements may be shown to logged-in users via third-party ad platforms (e.g. Google). Personal data is shared only as described in this policy.</p>

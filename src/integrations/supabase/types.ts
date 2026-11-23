@@ -80,6 +80,48 @@ export type Database = {
         }
         Relationships: []
       }
+      album_access_requests: {
+        Row: {
+          album_id: string
+          created_at: string
+          id: string
+          note: string | null
+          requester_id: string
+          status: string
+        }
+        Insert: {
+          album_id: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          requester_id: string
+          status?: string
+        }
+        Update: {
+          album_id?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          requester_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "album_access_requests_album_id_fkey"
+            columns: ["album_id"]
+            isOneToOne: false
+            referencedRelation: "photo_albums"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "album_access_requests_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       connections: {
         Row: {
           addressee: string
@@ -131,6 +173,7 @@ export type Database = {
           expires_at: string | null
           id: string
           max_views: number | null
+          read_at: string | null
           sender: string
           unsent: boolean
           view_count: number
@@ -146,6 +189,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           max_views?: number | null
+          read_at?: string | null
           sender: string
           unsent?: boolean
           view_count?: number
@@ -161,6 +205,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           max_views?: number | null
+          read_at?: string | null
           sender?: string
           unsent?: boolean
           view_count?: number
@@ -222,6 +267,7 @@ export type Database = {
           is_private: boolean
           path: string
           position: number
+          preview_path: string | null
           user_id: string
           view_timer: string
         }
@@ -232,6 +278,7 @@ export type Database = {
           is_private?: boolean
           path: string
           position?: number
+          preview_path?: string | null
           user_id: string
           view_timer?: string
         }
@@ -242,6 +289,7 @@ export type Database = {
           is_private?: boolean
           path?: string
           position?: number
+          preview_path?: string | null
           user_id?: string
           view_timer?: string
         }
@@ -312,6 +360,7 @@ export type Database = {
           id: string
           is_online: boolean
           last_seen_at: string | null
+          looking_for: string | null
           orientation: string | null
           username: string | null
           verified: boolean
@@ -329,6 +378,7 @@ export type Database = {
           id: string
           is_online?: boolean
           last_seen_at?: string | null
+          looking_for?: string | null
           orientation?: string | null
           username?: string | null
           verified?: boolean
@@ -346,6 +396,7 @@ export type Database = {
           id?: string
           is_online?: boolean
           last_seen_at?: string | null
+          looking_for?: string | null
           orientation?: string | null
           username?: string | null
           verified?: boolean
@@ -495,6 +546,7 @@ export type Database = {
         Args: { _reported_id: string; _reporter_id: string }
         Returns: undefined
       }
+      can_read_photo: { Args: { _path: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -504,6 +556,8 @@ export type Database = {
       }
       increment_message_view: { Args: { message_id: string }; Returns: boolean }
       is_connected: { Args: { _conn: string }; Returns: boolean }
+      mark_chat_read: { Args: { _connection_id: string }; Returns: undefined }
+      unsend_message: { Args: { _message_id: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "user"

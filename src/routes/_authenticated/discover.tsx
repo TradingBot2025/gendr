@@ -37,7 +37,7 @@ function Discover() {
     queryFn: async () => {
       const [{ data: profiles }, { data: photos }, { data: conns }] = await Promise.all([
         // Show all non-banned users except yourself, even if profile incomplete
-        supabase.from("profiles").select("id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at,created_at").eq("banned", false).neq("id", me!.user.id).limit(2000),
+        supabase.from("profiles").select("id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at,created_at").eq("banned", false).neq("id", me?.user.id ?? "").limit(2000),
         // Fetch photos - RLS will filter private ones automatically
         supabase.from("photos").select("user_id,path,position,is_private,album_id,view_timer").order("position"),
         supabase.from("connections").select("*"),
@@ -71,23 +71,24 @@ function Discover() {
 
   useEffect(() => {
     const ch = supabase.channel("presence").on("presence", { event: "sync" }, () => {}).subscribe();
-    return () => supabase.removeChannel(ch);
+    return () => { void supabase.removeChannel(ch); };
   }, []);
 
   const markOnline = async () => {
-    await supabase.from("profiles").update({ last_seen_at: new Date().toISOString() }).eq("id", me!.user.id);
+    await supabase.from("profiles").update({ last_seen_at: new Date().toISOString() }).eq("id", me?.user.id ?? "");
   };
   useEffect(() => { markOnline(); const iv = setInterval(markOnline, 60000); return () => clearInterval(iv); }, [me]);
 
   const connect = async (id: string) => {
     await logProfileView(id);
-    const { error } = await supabase.from("connections").insert({ requester: me!.user.id, addressee: id });
+    const { error } = await supabase.from("connections").insert({ requester: me?.user.id ?? "", addressee: id });
     if (error) { toast.error(error.message); return; }
     toast.success("Request sent — waiting for their response");
     qc.invalidateQueries({ queryKey: ["discover"] });
   };
   const respond = async (cid: string, status: "accepted" | "declined") => {
-    await supabase.from("connections").update({ status }).eq("id", cid);
+    const { error } = await supabase.from("connections").update({ status }).eq("id", cid);
+    if (error) { toast.error(error.message); return; }
     qc.invalidateQueries({ queryKey: ["discover"] });
   };
 
@@ -107,7 +108,7 @@ function Discover() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap gap-3 items-center justify-between mb-6">
         <h1 className="text-4xl font-bold">Discover</h1>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setTab("browse")}><Compass className="h-4 w-4" />Browse</Button>
@@ -172,7 +173,7 @@ function Discover() {
                     toParams={{ username: profileUsername }}
                     action={
                       <div className="flex gap-2">
-                        {already ? <Button asChild variant="success" className="flex-1"><Link to={`/chat/${connId}`}>Chat</Link></Button> : <Button variant="hero" className="flex-1" onClick={() => connect(p.id)}>Connect</Button>}
+                        {already ? <Button asChild variant="success" className="flex-1"><Link to="/chat/$id" params={{ id: connId ?? "" }}>Chat</Link></Button> : <Button variant="hero" className="flex-1" onClick={() => connect(p.id)}>Connect</Button>}
                       </div>
                     }
                   />

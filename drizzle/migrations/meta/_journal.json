@@ -15,6 +15,13 @@
       "when": 1795315432996,
       "tag": "0001_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795393940176,
+      "tag": "0002_album_approval_and_app_flow_repairs",
+      "breakpoints": true
     }
   ]
 }

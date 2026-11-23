@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, ChevronLeft, ChevronRight, Download, Share2, Trash2, Lock, Eye, EyeOff, Move } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
 interface PhotoViewerProps {
@@ -56,6 +56,7 @@ export function PhotoViewer({
   if (!isOpen || photos.length === 0) return null;
 
   const photo = photos[index];
+  if (!photo) return null;
   const url = urls[photo.path];
 
   const handleMoveToAlbum = () => {
@@ -69,6 +70,7 @@ export function PhotoViewer({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] p-0 bg-transparent shadow-none">
+        <DialogTitle className="sr-only">Photo viewer</DialogTitle>
         <div className="relative bg-background rounded-2xl overflow-hidden">
           {/* Header */}
           <div className="absolute top-4 left-4 right-4 z-10 flex justify-between">

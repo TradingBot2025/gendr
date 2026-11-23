@@ -31,7 +31,7 @@ function Dashboard() {
     queryFn: async () => {
       const [{ data: conns }, { data: people }, { data: photos }] = await Promise.all([
         supabase.from("connections").select("*"),
-        supabase.from("profiles").select("id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at,created_at").eq("banned", false).neq("id", uid!).not("gender", "is", null).order("created_at", { ascending: false }).limit(6),
+        supabase.from("profiles").select("id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at,created_at").eq("banned", false).neq("id", uid ?? "").not("gender", "is", null).order("created_at", { ascending: false }).limit(6),
         supabase.from("photos").select("user_id,path,position").order("position"),
       ]);
       const first: Record<string, string> = {};
