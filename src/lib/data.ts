@@ -4,7 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { coverPhoto } from "@/lib/photo-visibility";
 import type { Tables } from "@/integrations/supabase/types";
 
-export type Profile = Pick<Tables<"profiles">, "id" | "display_name" | "birthdate" | "gender" | "orientation" | "bio" | "city" | "country" | "verified">;
+export type Profile = Pick<Tables<"profiles">, "id" | "display_name" | "birthdate" | "gender" | "orientation" | "bio" | "city" | "country" | "verified" | "username" | "last_seen_at" | "is_online" | "created_at" | "looking_for">;
+
+// Public profile type (safe columns only, age instead of birthdate)
+export type PublicProfile = Omit<Profile, "birthdate"> & { age: number | null };
 export type Photo = Tables<"photos">;
 export type Connection = Tables<"connections">;
 export type Message = Tables<"messages">;
@@ -91,13 +94,9 @@ export function useProfileViews() {
   return useQuery({
     queryKey: ["profile-views"],
     queryFn: async () => {
-      const [{ data: views }, { data: photos }] = await Promise.all([
-        supabase.from("profile_views").select("*").order("created_at", { ascending: false }),
-        supabase.from("photos").select("user_id,path,position").order("position"),
-      ]);
-      const first: Record<string, string> = {};
-      photos?.forEach((p) => { if (!first[p.user_id]) first[p.user_id] = p.path; });
-      return { views: views ?? [], first };
+      const { data, error } = await supabase.rpc("get_profile_views_paginated", { _limit: 50, _offset: 0 });
+      if (error) throw error;
+      return { views: data ?? [], first: {} as Record<string, string> };
     },
   });
 }

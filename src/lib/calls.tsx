@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { sendCallSignal, getTurnCredentials } from "@/lib/call-signalling.functions";
 
 type Signal = {
   type: "offer" | "answer" | "ice" | "hangup" | "decline";
@@ -35,7 +36,6 @@ export const useCall = () => {
   return c;
 };
 
-const ICE = [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
 const IDLE: CallState = { status: "idle", peerId: null, peerName: "", video: false, random: false };
 
 export function CallProvider({ userId, myName, children }: { userId: string; myName: string; children: ReactNode }) {
@@ -49,20 +49,50 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
   const pendingOffer = useRef<Signal | null>(null);
   const iceQueue = useRef<RTCIceCandidateInit[]>([]);
   const autoAccept = useRef(false);
-  const outChannels = useRef(new Map<string, Promise<RealtimeChannel>>());
+  const turnCredsRef = useRef<{ username: string; credential: string; urls: string[] } | null>(null);
+
+  // Fetch TURN credentials on mount
+  useEffect(() => {
+    let alive = true;
+    getTurnCredentials().then(({ username, credential, urls }) => {
+      if (alive && username && credential) {
+        turnCredsRef.current = { username, credential, urls };
+      }
+    }).catch(() => {
+      // Fallback to STUN only
+      turnCredsRef.current = null;
+    });
+    return () => { alive = false; };
+  }, []);
+
+  const getIceServers = useCallback((forceRelay = false) => {
+    const servers: RTCIceServer[] = [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+    ];
+
+    if (turnCredsRef.current) {
+      servers.push({
+        urls: turnCredsRef.current.urls,
+        username: turnCredsRef.current.username,
+        credential: turnCredsRef.current.credential,
+      });
+    }
+
+    if (forceRelay) {
+      return { iceServers: servers, iceTransportPolicy: "relay" as RTCIceTransportPolicy };
+    }
+    return { iceServers: servers };
+  }, []);
 
   const send = useCallback(async (to: string, s: Omit<Signal, "from" | "name">) => {
-    let p = outChannels.current.get(to);
-    if (!p) {
-      p = new Promise<RealtimeChannel>((resolve) => {
-        const ch = supabase.channel(`call-${to}`);
-        ch.subscribe((st) => { if (st === "SUBSCRIBED") resolve(ch); });
-      });
-      outChannels.current.set(to, p);
+    try {
+      await sendCallSignal({ data: { to, ...s } });
+    } catch (err: any) {
+      console.error("Failed to send call signal:", err.message);
+      // Don't throw - let the call fail naturally
     }
-    const ch = await p;
-    await ch.send({ type: "broadcast", event: "signal", payload: { ...s, from: userId, name: myName } });
-  }, [userId, myName]);
+  }, []);
 
   const cleanup = useCallback(() => {
     pc.current?.close();
@@ -76,8 +106,9 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
     setState(IDLE);
   }, []);
 
-  const makePc = (peer: string) => {
-    const conn = new RTCPeerConnection({ iceServers: ICE });
+  const makePc = useCallback((peer: string, forceRelay = false) => {
+    const config = getIceServers(forceRelay);
+    const conn = new RTCPeerConnection(config);
     conn.onicecandidate = (e) => { if (e.candidate) void send(peer, { type: "ice", candidate: e.candidate.toJSON() }); };
     conn.ontrack = (e) => { if (e.streams[0]) setRemote(e.streams[0]); };
     conn.onconnectionstatechange = () => {
@@ -87,7 +118,7 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
     };
     pc.current = conn;
     return conn;
-  };
+  }, [getIceServers, send, cleanup]);
 
   const getMedia = async (video: boolean) => {
     const m = await navigator.mediaDevices.getUserMedia({ audio: true, video });
@@ -106,7 +137,8 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
     try {
       setState({ status: "outgoing", peerId, peerName, video, random });
       const m = await getMedia(video);
-      const conn = makePc(peerId);
+      // Force relay for random calls to hide IPs
+      const conn = makePc(peerId, random);
       m.getTracks().forEach((t) => conn.addTrack(t, m));
       const offer = await conn.createOffer();
       await conn.setLocalDescription(offer);
@@ -122,7 +154,8 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
     if (!offer?.sdp) return;
     try {
       const m = await getMedia(!!offer.video);
-      const conn = makePc(offer.from);
+      // Force relay for random calls
+      const conn = makePc(offer.from, !!offer.random);
       m.getTracks().forEach((t) => conn.addTrack(t, m));
       await conn.setRemoteDescription(offer.sdp);
       await flushIce();
@@ -178,14 +211,13 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
   };
 
   useEffect(() => {
+    // Use private channel for receiving - only authenticated user can subscribe
     const ch = supabase
-      .channel(`call-${userId}`)
+      .channel(`private-call-${userId}`)
       .on("broadcast", { event: "signal" }, ({ payload }) => handler.current(payload as Signal))
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
-      outChannels.current.forEach((p) => p.then((c) => supabase.removeChannel(c)));
-      outChannels.current.clear();
     };
   }, [userId]);
 

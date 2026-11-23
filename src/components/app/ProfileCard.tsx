@@ -1,13 +1,21 @@
 import { BadgeCheck, MapPin, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { ageOf, useCoverPhoto, type Profile } from "@/lib/data";
+import { ageOf, useCoverPhoto, type Profile, type PublicProfile } from "@/lib/data";
 
-export function ProfileCard({ p, photo, action, to, toParams }: { p: Profile; photo?: string | undefined; action?: ReactNode; to?: string; toParams?: Record<string, string> }) {
-  const age = ageOf(p.birthdate);
+type ProfileLike = Profile | PublicProfile;
+
+function getAge(p: ProfileLike): number | null {
+  if ("age" in p && p.age !== undefined) return p.age;
+  if ("birthdate" in p && p.birthdate) return ageOf(p.birthdate);
+  return null;
+}
+
+export function ProfileCard({ p, photo, action, to, toParams }: { p: ProfileLike; photo?: string | undefined; action?: ReactNode; to?: string; toParams?: Record<string, string> }) {
+  const age = getAge(p);
   const cover = useCoverPhoto(p.id);
   const image = cover.url ?? (!cover.blurred ? photo : undefined);
-  
+
   const cardContent = (
     <>
       <div className="relative aspect-[4/5] bg-muted">

@@ -62,10 +62,11 @@ function ShellInner({ signOut }: { signOut: () => void }) {
     { to: "/account", label: "Account", icon: Settings },
   ] as const;
 
-  // Mobile bottom nav — exactly 4 items; messages badge on Matches
+  // Mobile bottom nav — 5 items per roadmap: Discover, Matches, Messages, Random, Account
   const mobileNav = [
     { to: "/discover", label: "Discover", icon: Compass, badge: 0 },
-    { to: "/connections", label: "Matches", icon: Heart, badge: unread },
+    { to: "/connections", label: "Matches", icon: Heart, badge: 0 },
+    { to: "/messages", label: "Messages", icon: MessageCircle, badge: unread },
     { to: "/random", label: "Random", icon: Shuffle, badge: 0 },
     { to: "/account", label: "Account", icon: Settings, badge: 0 },
   ] as const;

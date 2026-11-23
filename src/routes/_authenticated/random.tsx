@@ -1,14 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import type { RealtimeChannel } from "@supabase/supabase-js";
-import { Shuffle, SkipForward, Square, Globe } from "lucide-react";
+import { Shuffle, SkipForward, Square, Globe, Shield, AlertCircle, UserX, Video, Mic } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
 import { useCall } from "@/lib/calls";
 import { MediaView } from "@/components/app/CallOverlay";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { unlockAudioContext, playRingingSound, stopRingingSound } from "@/lib/audio";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/random")({
   head: () => ({ meta: [{ title: "Random video — Gender" }, { name: "description", content: "Meet someone new on a random video call." }] }),
@@ -75,13 +76,17 @@ function Random() {
   const { data: me } = useMe();
   const call = useCall();
   const [searching, setSearching] = useState(false);
-  const [online, setOnline] = useState(0);
   const [selectedCountry, setSelectedCountry] = useState("global");
-  const ch = useRef<RealtimeChannel | null>(null);
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [showConsent, setShowConsent] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportDetails, setReportDetails] = useState("");
   const uid = me?.user.id;
   const callRef = useRef(call); callRef.current = call;
   const searchRef = useRef(searching); searchRef.current = searching;
   const countryRef = useRef(selectedCountry); countryRef.current = selectedCountry;
+  const peerIdRef = useRef<string | null>(null);
 
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
@@ -98,48 +103,7 @@ function Random() {
     };
   }, []);
 
-  // Build channel name based on selected country
-  const getChannelName = (country: string) => country === "global" ? "random-lobby" : `random-lobby-${country.toLowerCase()}`;
-
-  useEffect(() => {
-    if (!uid) return;
-    const channelName = getChannelName(countryRef.current);
-    const c = supabase.channel(channelName, { config: { presence: { key: uid } } });
-    c.on("presence", { event: "sync" }, () => {
-      const st = c.presenceState<{ waiting: boolean; name: string }>();
-      setOnline(Object.keys(st).length);
-      if (!searchRef.current || callRef.current.status !== "idle") return;
-      const waiting = Object.entries(st).filter(([, v]) => v[0]?.waiting).map(([k, v]) => ({ id: k, name: v[0]?.name ?? "Stranger" })).sort((a, b) => a.id.localeCompare(b.id));
-      const i = waiting.findIndex((w) => w.id === uid);
-      if (i >= 0 && i % 2 === 0 && waiting[i + 1]) {
-        const peer = waiting[i + 1]!;
-        void c.track({ waiting: false, name: "" });
-        void callRef.current.start(peer.id, peer.name, true, true);
-      }
-    }).subscribe();
-    ch.current = c;
-    return () => { supabase.removeChannel(c); ch.current = null; callRef.current.setAutoAccept(false); if (callRef.current.random) callRef.current.hangup(); };
-  }, [uid, selectedCountry]);
-
-  // keep presence in sync with state
-  useEffect(() => {
-    call.setAutoAccept(searching);
-    const waiting = searching && call.status === "idle";
-    void ch.current?.track({ waiting, name: me?.profile?.display_name?.split(" ")[0] ?? "Stranger" });
-  }, [searching, call.status, me?.profile?.display_name]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const inCall = call.random && call.status !== "idle";
-  const stop = () => { setSearching(false); if (inCall) call.hangup(); };
-  const next = () => { if (inCall) call.hangup(); setSearching(true); };
-
-  // Reset search when country changes
-  useEffect(() => {
-    if (searching) {
-      setSearching(false);
-    }
-  }, [selectedCountry]);
-
-  // Handle ringing sound for random calls (global CallOverlay returns null for random)
+  // Handle ringing sound for random calls
   useEffect(() => {
     if (call.random && call.status === "incoming") {
       playRingingSound();
@@ -149,12 +113,109 @@ function Random() {
     return () => { if (call.random) stopRingingSound(); };
   }, [call.random, call.status]);
 
+  // Search for match using server-side RPC
+  const findMatch = async () => {
+    if (!uid || !consentGiven) return;
+    try {
+      const { data, error } = await supabase.rpc("find_random_match", { _country_code: countryRef.current });
+      if (error) throw error;
+      if (data && data.length > 0) {
+        const peer = data[0];
+        peerIdRef.current = peer.peer_id;
+        void callRef.current.start(peer.peer_id, peer.peer_name, true, true);
+      } else {
+        // No match found immediately - wait for one via realtime
+        setSearching(true);
+      }
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to find match");
+      setSearching(false);
+    }
+  };
+
+  // Subscribe to random matchmaking queue updates for real-time matching
+  useEffect(() => {
+    if (!uid || !searching) return;
+    const ch = supabase
+      .channel(`random-queue-${uid}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "random_matchmaking_queue", filter: `user_id=eq.${uid}` }, (payload) => {
+        const newRow = payload.new as any;
+        if (newRow.status === "matched" && newRow.matched_with) {
+          peerIdRef.current = newRow.matched_with;
+          // Get peer name
+          supabase.from("profiles").select("display_name").eq("id", newRow.matched_with).maybeSingle()
+            .then(({ data: peer }) => {
+              if (peer) {
+                void callRef.current.start(newRow.matched_with, peer.display_name ?? "Stranger", true, true);
+              }
+            });
+        } else if (newRow.status === "cancelled" || newRow.status === "expired") {
+          setSearching(false);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [uid, searching]);
+
+  const stop = () => {
+    setSearching(false);
+    if (call.random && call.status !== "idle") call.hangup();
+    // Leave queue
+    supabase.rpc("leave_random_queue").catch(() => {});
+  };
+
+  const next = () => {
+    if (call.random && call.status !== "idle") call.hangup();
+    supabase.rpc("leave_random_queue").then(() => {
+      setTimeout(() => findMatch(), 500);
+    });
+  };
+
+  const inCall = call.random && call.status !== "idle";
+
+  const handleConsentAccept = () => {
+    setConsentGiven(true);
+    setShowConsent(false);
+    findMatch();
+  };
+
+  const handleReport = async () => {
+    if (!reportReason || !peerIdRef.current) return;
+    try {
+      // Report the peer
+      await supabase.from("reports").insert({
+        reporter_id: uid,
+        reported_id: peerIdRef.current,
+        reason: reportDetails || reportReason,
+        reason_category: reportReason,
+        auto_blocked: true,
+      });
+      // Also block/leave
+      stop();
+      toast.success("Reported and disconnected");
+      setShowReport(false);
+      setReportReason("");
+      setReportDetails("");
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to report");
+    }
+  };
+
+  // Reset consent on country change
+  useEffect(() => {
+    if (searching) {
+      setSearching(false);
+      supabase.rpc("leave_random_queue").catch(() => {});
+    }
+    setConsentGiven(false);
+  }, [selectedCountry]);
+
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-8">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-4xl font-bold">Random video</h1>
-          <p className="text-muted-foreground">{online} online right now. Be kind — you can skip anytime.</p>
+          <p className="text-muted-foreground">Meet someone new. Be kind — you can skip or report anytime.</p>
         </div>
         <div className="flex items-center gap-2">
           <Globe className="h-5 w-5 text-muted-foreground" />
@@ -170,30 +231,126 @@ function Random() {
           </Select>
         </div>
       </div>
+
       <div className="grid gap-4 md:grid-cols-2">
         <div className="relative aspect-video overflow-hidden rounded-3xl bg-stage">
-          {inCall && call.remote ? <MediaView stream={call.remote} className="h-full w-full object-cover" /> : (
+          {inCall && call.remote ? (
+            <MediaView stream={call.remote} className="h-full w-full object-cover" />
+          ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-stage-foreground">
               <Shuffle className={`h-10 w-10 ${searching ? "animate-spin" : ""}`} />
               <span>{searching ? (inCall ? "Connecting…" : "Looking for someone…") : "Press Start to meet someone"}</span>
             </div>
           )}
           {inCall && <span className="absolute left-3 top-3 rounded-full bg-card/80 px-3 py-1 text-sm">{call.peerName}</span>}
+          {inCall && (
+            <div className="absolute right-3 top-3 flex gap-1">
+              <Button size="icon" variant="ghost" className="bg-white/90" onClick={() => call.toggleCam()} aria-label="Toggle camera">
+                <Video className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" className="bg-white/90" onClick={() => call.toggleMic()} aria-label="Toggle microphone">
+                <Mic className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" className="bg-white/90" onClick={() => { setShowReport(true); peerIdRef.current = call.peerId; }} aria-label="Report user">
+                <AlertCircle className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          )}
         </div>
         <div className="aspect-video overflow-hidden rounded-3xl bg-muted">
           {call.local && call.random ? <MediaView stream={call.local} muted className="h-full w-full -scale-x-100 object-cover" /> : <div className="flex h-full items-center justify-center text-muted-foreground">Your camera</div>}
         </div>
       </div>
+
       <div className="mt-6 flex justify-center gap-3">
-        {!searching && !inCall ? (
-          <Button variant="hero" size="lg" onClick={() => setSearching(true)}><Shuffle />Start</Button>
+        {!searching && !inCall && !consentGiven ? (
+          <Button variant="hero" size="lg" onClick={() => setShowConsent(true)}><Shield className="h-4 w-4 mr-2" />Start</Button>
+        ) : !searching && !inCall && consentGiven ? (
+          <Button variant="hero" size="lg" onClick={findMatch}><Shuffle className="h-4 w-4 mr-2" />Find Match</Button>
         ) : (
           <>
-            <Button variant="secondary" size="lg" onClick={next}><SkipForward />Next</Button>
-            <Button variant="destructive" size="lg" onClick={stop}><Square />Stop</Button>
+            <Button variant="secondary" size="lg" onClick={next}><SkipForward className="h-4 w-4 mr-2" />Next</Button>
+            <Button variant="destructive" size="lg" onClick={stop}><Square className="h-4 w-4 mr-2" />Stop</Button>
           </>
         )}
       </div>
+
+      {/* Consent Dialog */}
+      <Dialog open={showConsent} onOpenChange={setShowConsent}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Random Video Consent</DialogTitle>
+            <DialogDescription>
+              You are about to join a random video call with another user. Please read and accept:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-1 h-4 w-4" required />
+              <span>I am 18 years or older</span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-1 h-4 w-4" required />
+              <span>I understand this is a live video call with a stranger</span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-1 h-4 w-4" required />
+              <span>I will not share illegal, explicit, or harmful content</span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-1 h-4 w-4" required />
+              <span>I understand I can be reported and banned for violations</span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-1 h-4 w-4" required />
+              <span>I consent to my IP being relayed through TURN servers for privacy</span>
+            </label>
+          </div>
+          <div className="flex gap-2 border-t pt-4">
+            <Button variant="outline" className="flex-1" onClick={() => setShowConsent(false)}>Cancel</Button>
+            <Button variant="hero" className="flex-1" onClick={handleConsentAccept}>I Accept</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Report Dialog */}
+      <Dialog open={showReport} onOpenChange={setShowReport}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Report User</DialogTitle>
+            <DialogDescription>Help keep the community safe. Reports are reviewed by our team.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Reason</label>
+              <Select value={reportReason} onValueChange={setReportReason}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inappropriate_content">Inappropriate Content</SelectItem>
+                  <SelectItem value="harassment">Harassment</SelectItem>
+                  <SelectItem value="fake_profile">Fake Profile</SelectItem>
+                  <SelectItem value="underage">Underage User</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Details (optional)</label>
+              <textarea
+                value={reportDetails}
+                onChange={(e) => setReportDetails(e.target.value)}
+                placeholder="Describe what happened..."
+                rows={3}
+                className="w-full rounded-lg border bg-background p-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 border-t pt-4">
+            <Button variant="outline" className="flex-1" onClick={() => { setShowReport(false); setReportReason(""); setReportDetails(""); }}>Cancel</Button>
+            <Button variant="destructive" className="flex-1" onClick={handleReport} disabled={!reportReason}>Report & Block</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
