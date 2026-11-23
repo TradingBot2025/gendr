@@ -25,6 +25,8 @@ import {
   Flag,
   UserX,
   Loader2,
+  Check,
+  X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos } from "@/lib/data";
@@ -63,19 +65,75 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 
 const REPORT_REASONS = [
-  { value: "spam", label: "Spam", description: "Unwanted messages, promotional content, or repetitive messaging" },
-  { value: "fraud", label: "Fraud/Scam", description: "Attempting to deceive for money, personal info, or financial gain" },
-  { value: "money_request", label: "Asking for Money", description: "Directly or indirectly requesting money, gifts, or financial help" },
-  { value: "fake_profile", label: "Fake Profile", description: "Using stolen photos, false identity, or misleading information" },
-  { value: "harassment", label: "Harassment", description: "Threats, abusive language, stalking, or unwanted persistent contact" },
-  { value: "inappropriate_content", label: "Inappropriate Content", description: "Explicit, offensive, or prohibited content in photos/bio" },
+  {
+    value: "spam",
+    label: "Spam",
+    description: "Unwanted messages, promotional content, or repetitive messaging",
+  },
+  {
+    value: "fraud",
+    label: "Fraud/Scam",
+    description: "Attempting to deceive for money, personal info, or financial gain",
+  },
+  {
+    value: "money_request",
+    label: "Asking for Money",
+    description: "Directly or indirectly requesting money, gifts, or financial help",
+  },
+  {
+    value: "fake_profile",
+    label: "Fake Profile",
+    description: "Using stolen photos, false identity, or misleading information",
+  },
+  {
+    value: "harassment",
+    label: "Harassment",
+    description: "Threats, abusive language, stalking, or unwanted persistent contact",
+  },
+  {
+    value: "inappropriate_content",
+    label: "Inappropriate Content",
+    description: "Explicit, offensive, or prohibited content in photos/bio",
+  },
   { value: "underage", label: "Underage User", description: "Appears to be under 18 years old" },
   { value: "other", label: "Other", description: "Something not listed here" },
 ];
+
+const DISAPPEAR_OPTIONS = [
+  { value: 10, label: "10 seconds" },
+  { value: 60, label: "1 minute" },
+  { value: 3600, label: "1 hour" },
+  { value: 86400, label: "24 hours" },
+  { value: 604800, label: "7 days" },
+];
+
+function formatDisappear(seconds: number | null | undefined): string | null {
+  if (!seconds || seconds <= 0) return null;
+  const preset = DISAPPEAR_OPTIONS.find((o) => o.value === seconds);
+  if (preset) return preset.label;
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  if (seconds < 3600) {
+    const m = Math.round(seconds / 60);
+    return `${m} minute${m === 1 ? "" : "s"}`;
+  }
+  if (seconds < 86400) {
+    const h = Math.round(seconds / 3600);
+    return `${h} hour${h === 1 ? "" : "s"}`;
+  }
+  if (seconds < 604800) {
+    const d = Math.round(seconds / 86400);
+    return `${d} day${d === 1 ? "" : "s"}`;
+  }
+  const w = Math.round(seconds / 604800);
+  return `${w} week${w === 1 ? "" : "s"}`;
+}
 
 export const Route = createFileRoute("/_authenticated/chat/$id")({
   head: () => ({
@@ -156,7 +214,9 @@ function Chat() {
         supabase.from("profiles").select("*").eq("id", pid).maybeSingle(),
         supabase.from("photos").select("path").eq("user_id", pid).order("position").limit(1),
       ]);
-      return { pid, peer: p, photo: ph?.[0]?.path };
+      const disappearSeconds =
+        (c as { disappear_seconds?: number | null }).disappear_seconds ?? null;
+      return { pid, peer: p, photo: ph?.[0]?.path, disappearSeconds };
     },
   });
 
@@ -259,6 +319,8 @@ function Chat() {
     );
   if (!info || !uid) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
   const name = info.peer?.display_name ?? "Match";
+  const disappearSeconds = info.disappearSeconds ?? 86400;
+  const disappearLabel = formatDisappear(disappearSeconds) ?? "24 hours";
 
   const now = Date.now();
   const expired = (msgs ?? []).filter(
@@ -305,6 +367,19 @@ function Chat() {
     });
     if (error) toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["messages", id] });
+  };
+
+  const setChatTimer = async (seconds: number) => {
+    const { error } = await supabase.rpc("set_chat_timer", {
+      _connection_id: id,
+      _seconds: seconds,
+    });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(`Disappearing messages: ${formatDisappear(seconds)}`);
+    qc.invalidateQueries({ queryKey: ["chat-info", id] });
   };
 
   const unsendMessage = async (messageId: string) => {
@@ -417,7 +492,12 @@ function Chat() {
             <span className="flex h-full items-center justify-center">{name[0]}</span>
           )}
         </div>
-        <div className="flex-1 font-semibold">{name}</div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold truncate">{name}</div>
+          <div className="text-[11px] text-muted-foreground truncate">
+            Messages disappear after {disappearLabel}
+          </div>
+        </div>
         <Button
           size="icon"
           variant="ghost"
@@ -460,6 +540,19 @@ function Chat() {
             >
               <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
             </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Clock className="h-4 w-4 mr-2" /> Disappearing messages
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {DISAPPEAR_OPTIONS.map((o) => (
+                  <DropdownMenuItem key={o.value} onClick={() => setChatTimer(o.value)}>
+                    {o.label}
+                    {disappearSeconds === o.value && <Check className="ml-auto h-4 w-4" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => {
@@ -502,12 +595,12 @@ function Chat() {
       <Dialog open={expNotice} onOpenChange={setExpNotice}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>24-hour chat expiration</DialogTitle>
+            <DialogTitle>Disappearing messages</DialogTitle>
           </DialogHeader>
           <p className="text-sm mb-4">
             All messages in this chat are end-to-end encrypted and are permanently deleted{" "}
-            <strong>24 hours after they are sent</strong>, from both the app and our database.
-            Nothing is visible after 24 hours.
+            <strong>after {disappearLabel}</strong>, from both the app and our database. Nothing is
+            visible after {disappearLabel}.
           </p>
           <ShieldCheck className="h-4 w-4 text-primary mr-1" />
           <span className="text-sm text-muted-foreground">End-to-end encrypted</span>
@@ -523,8 +616,8 @@ function Chat() {
         )}
         {expired.length > 0 && (
           <div className="mb-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-[11px] text-destructive text-center">
-            {expired.length} message{expired.length !== 1 ? "s" : ""} expired and were deleted
-            (24-hour limit).
+            {expired.length} message{expired.length !== 1 ? "s" : ""} expired and were deleted (
+            {disappearLabel} limit).
           </div>
         )}
         {msgs?.map((m) => {
@@ -550,7 +643,7 @@ function Chat() {
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div
-                className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${(isExpired && !isShortTimer) || isViewLimited ? "opacity-40" : ""} ${isUnsent ? "bg-muted" : ""}`}
+                className={`group max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${(isExpired && !isShortTimer) || isViewLimited ? "opacity-40" : ""} ${isUnsent ? "bg-muted" : ""}`}
               >
                 {isUnsent ? (
                   <div className="flex items-center gap-2 text-xs opacity-60">
@@ -629,7 +722,7 @@ function Chat() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="text-[10px] opacity-50 hover:opacity-100"
+                          className="text-[10px] opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
                           onClick={() => unsendMessage(m.id)}
                           title="Unsend"
                         >
@@ -639,7 +732,7 @@ function Chat() {
                     </div>
                     {isExpired && !isShortTimer && (
                       <div className="text-[10px] text-center opacity-60 mt-1">
-                        Expired — deleted after 24h
+                        Expired — deleted after {disappearLabel}
                       </div>
                     )}
                     {isViewLimited && (
@@ -893,7 +986,9 @@ function Chat() {
                 </SelectTrigger>
                 <SelectContent>
                   {REPORT_REASONS.map((r) => (
-                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    <SelectItem key={r.value} value={r.value}>
+                      {r.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -909,7 +1004,9 @@ function Chat() {
                 rows={4}
                 required
               />
-              <p className="text-xs text-muted-foreground">Be specific. Reports with details are reviewed faster.</p>
+              <p className="text-xs text-muted-foreground">
+                Be specific. Reports with details are reviewed faster.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Attach Proof (Optional)</Label>
@@ -934,7 +1031,11 @@ function Chat() {
                       toast.error("Proof file must be under 5MB");
                       return;
                     }
-                    if (!file.type.startsWith("image/") && !file.type.startsWith("text/") && file.type !== "application/pdf") {
+                    if (
+                      !file.type.startsWith("image/") &&
+                      !file.type.startsWith("text/") &&
+                      file.type !== "application/pdf"
+                    ) {
                       toast.error("Proof must be an image, text file, or PDF");
                       return;
                     }
@@ -950,7 +1051,11 @@ function Chat() {
               {reportProofPreview && (
                 <div className="flex items-center gap-2 p-2 bg-muted rounded-lg">
                   {reportProofPreview.startsWith("blob:") ? (
-                    <img src={reportProofPreview} alt="Proof preview" className="h-16 w-auto rounded" />
+                    <img
+                      src={reportProofPreview}
+                      alt="Proof preview"
+                      className="h-16 w-auto rounded"
+                    />
                   ) : (
                     <span className="text-sm">{reportProofPreview}</span>
                   )}
@@ -981,48 +1086,58 @@ function Chat() {
             </Label>
           </div>
           <div className="flex gap-2 border-t pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => setReportOpen(false)} disabled={reporting}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setReportOpen(false)}
+              disabled={reporting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" className="flex-1" onClick={async () => {
-              if (!reportReason) {
-                toast.error("Please select a reason");
-                return;
-              }
-              if (blockAfterReport && !reportDescription.trim()) {
-                toast.error("Please provide details/proof for the report");
-                return;
-              }
-              setReporting(true);
-              try {
-                const { error } = await supabase.from("reports").insert({
-                  reporter_id: uid,
-                  reported_id: reportTargetId,
-                  reason: reportDescription.trim(),
-                  reason_category: reportReason,
-                  auto_blocked: blockAfterReport,
-                });
-                if (error) throw error;
-
-                toast.success("Report submitted" + (blockAfterReport ? " and user blocked" : ""));
-                setReportOpen(false);
-                setReportReason("");
-                setReportDescription("");
-                setReportProof(null);
-                setReportProofPreview(null);
-                if (fileRef.current) fileRef.current.value = "";
-                qc.invalidateQueries({ queryKey: ["discover"] });
-                qc.invalidateQueries({ queryKey: ["connections"] });
-                if (blockAfterReport) {
-                  void navigate({ to: "/connections" });
+            <Button
+              variant="destructive"
+              className="flex-1"
+              onClick={async () => {
+                if (!reportReason) {
+                  toast.error("Please select a reason");
+                  return;
                 }
-              } catch (err) {
-                const message = err instanceof Error ? err.message : String(err);
-                toast.error(message ?? "Failed to submit report");
-              } finally {
-                setReporting(false);
-              }
-            }} disabled={reporting || !reportReason}>
+                if (blockAfterReport && !reportDescription.trim()) {
+                  toast.error("Please provide details/proof for the report");
+                  return;
+                }
+                setReporting(true);
+                try {
+                  const { error } = await supabase.from("reports").insert({
+                    reporter_id: uid,
+                    reported_id: reportTargetId,
+                    reason: reportDescription.trim(),
+                    reason_category: reportReason,
+                    auto_blocked: blockAfterReport,
+                  });
+                  if (error) throw error;
+
+                  toast.success("Report submitted" + (blockAfterReport ? " and user blocked" : ""));
+                  setReportOpen(false);
+                  setReportReason("");
+                  setReportDescription("");
+                  setReportProof(null);
+                  setReportProofPreview(null);
+                  if (fileRef.current) fileRef.current.value = "";
+                  qc.invalidateQueries({ queryKey: ["discover"] });
+                  qc.invalidateQueries({ queryKey: ["connections"] });
+                  if (blockAfterReport) {
+                    void navigate({ to: "/connections" });
+                  }
+                } catch (err) {
+                  const message = err instanceof Error ? err.message : String(err);
+                  toast.error(message ?? "Failed to submit report");
+                } finally {
+                  setReporting(false);
+                }
+              }}
+              disabled={reporting || !reportReason}
+            >
               {reporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : ""} Submit Report
             </Button>
           </div>

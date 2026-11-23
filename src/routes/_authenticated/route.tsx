@@ -71,9 +71,7 @@ function ShellInner({ signOut }: { signOut: () => void }) {
     { to: "/messages", label: "Messages", icon: MessageCircle },
     { to: "/random", label: "Random", icon: Shuffle },
     { to: "/account", label: "Account", icon: Settings },
-    ...(me?.isAdmin
-      ? ([{ to: "/admin", label: "Admin", icon: UserCog }] as const)
-      : []),
+    ...(me?.isAdmin ? ([{ to: "/admin", label: "Admin", icon: UserCog }] as const) : []),
   ] as const;
 
   // Mobile bottom nav — 5 items per roadmap: Discover, Matches, Messages, Random, Account

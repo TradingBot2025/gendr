@@ -61,17 +61,43 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/_authenticated/profile/$username")({
-  head: () => ({ meta: [{ title: "Profile — Gender" }, { name: "description", content: "View user profile." }] }),
+  head: () => ({
+    meta: [{ title: "Profile — Gender" }, { name: "description", content: "View user profile." }],
+  }),
   component: ProfileView,
 });
 
 const REPORT_REASONS = [
-  { value: "spam", label: "Spam", description: "Unwanted messages, promotional content, or repetitive messaging" },
-  { value: "fraud", label: "Fraud/Scam", description: "Attempting to deceive for money, personal info, or financial gain" },
-  { value: "money_request", label: "Asking for Money", description: "Directly or indirectly requesting money, gifts, or financial help" },
-  { value: "fake_profile", label: "Fake Profile", description: "Using stolen photos, false identity, or misleading information" },
-  { value: "harassment", label: "Harassment", description: "Threats, abusive language, stalking, or unwanted persistent contact" },
-  { value: "inappropriate_content", label: "Inappropriate Content", description: "Explicit, offensive, or prohibited content in photos/bio" },
+  {
+    value: "spam",
+    label: "Spam",
+    description: "Unwanted messages, promotional content, or repetitive messaging",
+  },
+  {
+    value: "fraud",
+    label: "Fraud/Scam",
+    description: "Attempting to deceive for money, personal info, or financial gain",
+  },
+  {
+    value: "money_request",
+    label: "Asking for Money",
+    description: "Directly or indirectly requesting money, gifts, or financial help",
+  },
+  {
+    value: "fake_profile",
+    label: "Fake Profile",
+    description: "Using stolen photos, false identity, or misleading information",
+  },
+  {
+    value: "harassment",
+    label: "Harassment",
+    description: "Threats, abusive language, stalking, or unwanted persistent contact",
+  },
+  {
+    value: "inappropriate_content",
+    label: "Inappropriate Content",
+    description: "Explicit, offensive, or prohibited content in photos/bio",
+  },
   { value: "underage", label: "Underage User", description: "Appears to be under 18 years old" },
   { value: "other", label: "Other", description: "Something not listed here" },
 ];
@@ -101,7 +127,9 @@ function ProfileView() {
   const [moveAlbumId, setMoveAlbumId] = useState<string | null>(null);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const movePhotoId = useRef<string | null>(null);
-  const [albumRequests, setAlbumRequests] = useState<Record<string, { status: string; id: string }>>({});
+  const [albumRequests, setAlbumRequests] = useState<
+    Record<string, { status: string; id: string }>
+  >({});
 
   const { data: profile } = useQuery({
     queryKey: ["profile-view", username],
@@ -118,7 +146,8 @@ function ProfileView() {
       const { data: conns } = await supabase.from("connections").select("*");
       const conn = conns?.find(
         (c: { requester: string; addressee: string; status: string }) =>
-          (c.requester === uid && c.addressee === p.id) || (c.requester === p.id && c.addressee === uid),
+          (c.requester === uid && c.addressee === p.id) ||
+          (c.requester === p.id && c.addressee === uid),
       );
       const isConnected = conn?.status === "accepted";
 
@@ -157,7 +186,9 @@ function ProfileView() {
         photos: photosByAlbum[a.id] ?? [],
       }));
 
-      const visiblePhotos = isConnected ? (allPhotos ?? []) : (allPhotos ?? []).filter((ph) => !ph.is_private);
+      const visiblePhotos = isConnected
+        ? (allPhotos ?? [])
+        : (allPhotos ?? []).filter((ph) => !ph.is_private);
       const mainPhotos = visiblePhotos.filter((ph) => !ph.album_id);
 
       return {
@@ -193,14 +224,18 @@ function ProfileView() {
   const albums = profile?.albums ?? [];
 
   const hasMainPhotos = mainPhotos.length > 0;
-  const allVisiblePrivate = visiblePhotos.length > 0 && visiblePhotos.every((ph: { is_private: boolean }) => ph.is_private === true);
+  const allVisiblePrivate =
+    visiblePhotos.length > 0 &&
+    visiblePhotos.every((ph: { is_private: boolean }) => ph.is_private === true);
   const showMainBlur = !isConnected && allVisiblePrivate && profile.profile?.id !== uid;
 
   const privateAlbumWithPhotos = albums.find(
-    (a: { is_private: boolean; photos?: { length: number }[] }) => a.is_private && a.photos?.length > 0,
+    (a: { is_private: boolean; photos?: { length: number }[] }) =>
+      a.is_private && a.photos?.length > 0,
   );
   const fallbackMainPhoto = privateAlbumWithPhotos?.photos?.[0];
-  const showFallbackBlur = !isConnected && !hasMainPhotos && fallbackMainPhoto && profile.profile?.id !== uid;
+  const showFallbackBlur =
+    !isConnected && !hasMainPhotos && fallbackMainPhoto && profile.profile?.id !== uid;
 
   const photoPaths = [
     ...visiblePhotos.map((p: { path: string }) => p.path),
@@ -213,7 +248,8 @@ function ProfileView() {
 
   if (!me) return <div className="flex h-screen items-center justify-center">Loading…</div>;
   if (!p) return <div className="p-8 text-center text-muted-foreground">Profile not found.</div>;
-  if (p.id === uid) return <div className="flex h-screen items-center justify-center">Redirecting…</div>;
+  if (p.id === uid)
+    return <div className="flex h-screen items-center justify-center">Redirecting…</div>;
 
   const handleReport = async () => {
     if (!reportReason) {
@@ -252,7 +288,9 @@ function ProfileView() {
   };
 
   const handleRequestAlbumAccess = async (albumId: string) => {
-    const { error } = await supabase.from("album_access_requests").insert({ album_id: albumId, requester_id: uid });
+    const { error } = await supabase
+      .from("album_access_requests")
+      .insert({ album_id: albumId, requester_id: uid });
     if (error) {
       toast.error(error.message);
       return;
@@ -303,7 +341,11 @@ function ProfileView() {
       toast.error("Proof file must be under 5MB");
       return;
     }
-    if (!file.type.startsWith("image/") && !file.type.startsWith("text/") && file.type !== "application/pdf") {
+    if (
+      !file.type.startsWith("image/") &&
+      !file.type.startsWith("text/") &&
+      file.type !== "application/pdf"
+    ) {
       toast.error("Proof must be an image, text file, or PDF");
       return;
     }
@@ -334,7 +376,9 @@ function ProfileView() {
                         onClick={() => {
                           if (showMainBlur && i === 0) {
                             // Find the album for this photo and open request dialog
-                            const album = albums.find((a) => a.photos?.some((ap) => ap.path === ph.path));
+                            const album = albums.find((a) =>
+                              a.photos?.some((ap) => ap.path === ph.path),
+                            );
                             if (album) {
                               // Check request status
                               const req = albumRequests[album.id];
@@ -367,14 +411,18 @@ function ProfileView() {
                             <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
                               <Lock className="h-12 w-12 text-white/90 mb-3" />
                               <p className="text-white text-lg font-semibold">Private Photos</p>
-                              <p className="text-white/70 text-sm mt-1">This user's photos are private</p>
+                              <p className="text-white/70 text-sm mt-1">
+                                This user's photos are private
+                              </p>
                               <Button
                                 variant="default"
                                 className="mt-4 bg-primary text-primary-foreground"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   // Find album for this photo
-                                  const album = albums.find((a) => a.photos?.some((ap) => ap.path === ph.path));
+                                  const album = albums.find((a) =>
+                                    a.photos?.some((ap) => ap.path === ph.path),
+                                  );
                                   if (album) handleRequestAlbumAccess(album.id);
                                 }}
                               >
@@ -470,15 +518,46 @@ function ProfileView() {
                   <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => supabase.from("connections").insert({ requester: uid, addressee: p.id }).then(() => { toast.success("Connection request sent"); qc.invalidateQueries({ queryKey: ["discover"] }); })}>
+                <DropdownMenuItem
+                  onClick={() =>
+                    supabase
+                      .from("connections")
+                      .insert({ requester: uid, addressee: p.id })
+                      .then(() => {
+                        toast.success("Connection request sent");
+                        qc.invalidateQueries({ queryKey: ["discover"] });
+                      })
+                  }
+                >
                   <UserPlus className="h-4 w-4 mr-2" /> Connect
                 </DropdownMenuItem>
                 {isPending && !isOwnRequest && (
                   <>
-                    <DropdownMenuItem onClick={() => supabase.from("connections").update({ status: "accepted" }).eq("id", conn!.id).then(() => { toast.success("Connected!"); qc.invalidateQueries({ queryKey: ["profile-view", username] }); })}>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        supabase
+                          .from("connections")
+                          .update({ status: "accepted" })
+                          .eq("id", conn!.id)
+                          .then(() => {
+                            toast.success("Connected!");
+                            qc.invalidateQueries({ queryKey: ["profile-view", username] });
+                          })
+                      }
+                    >
                       <Check className="h-4 w-4 mr-2 text-green-500" /> Accept
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => supabase.from("connections").update({ status: "declined" }).eq("id", conn!.id).then(() => qc.invalidateQueries({ queryKey: ["profile-view", username] }))}>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        supabase
+                          .from("connections")
+                          .update({ status: "declined" })
+                          .eq("id", conn!.id)
+                          .then(() =>
+                            qc.invalidateQueries({ queryKey: ["profile-view", username] }),
+                          )
+                      }
+                    >
                       <X className="h-4 w-4 mr-2 text-red-500" /> Decline
                     </DropdownMenuItem>
                   </>
@@ -502,13 +581,23 @@ function ProfileView() {
               <h1 className="flex items-center gap-2 text-3xl font-bold">
                 {p.display_name}
                 {ageOf(p.birthdate) !== null && (
-                  <span className="text-2xl font-normal text-muted-foreground">, {ageOf(p.birthdate)}</span>
+                  <span className="text-2xl font-normal text-muted-foreground">
+                    , {ageOf(p.birthdate)}
+                  </span>
                 )}
                 {p.verified && <BadgeCheck className="h-6 w-6 text-primary" />}
               </h1>
               <div className="mt-1 flex flex-wrap gap-1.5 text-xs items-center">
-                {p.gender && <span className="rounded-full bg-accent px-2.5 py-1 text-accent-foreground">{p.gender}</span>}
-                {p.orientation && <span className="rounded-full bg-secondary px-2.5 py-1 text-secondary-foreground">{p.orientation}</span>}
+                {p.gender && (
+                  <span className="rounded-full bg-accent px-2.5 py-1 text-accent-foreground">
+                    {p.gender}
+                  </span>
+                )}
+                {p.orientation && (
+                  <span className="rounded-full bg-secondary px-2.5 py-1 text-secondary-foreground">
+                    {p.orientation}
+                  </span>
+                )}
                 {p.is_online && (
                   <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-2.5 py-1 text-xs font-medium text-green-400">
                     <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> Online
@@ -522,10 +611,16 @@ function ProfileView() {
             {p.city && (
               <span className="flex items-center gap-1">
                 <MapPin className="h-3.5 w-3.5" />
-                {p.city}{p.country && `, ${p.country}`}
+                {p.city}
+                {p.country && `, ${p.country}`}
               </span>
             )}
-            {p.country && !p.city && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{p.country}</span>}
+            {p.country && !p.city && (
+              <span className="flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5" />
+                {p.country}
+              </span>
+            )}
           </div>
 
           {p.bio && <p className="text-muted-foreground">{p.bio}</p>}
@@ -616,8 +711,12 @@ function ProfileView() {
                   const albumPhotos = album.photos ?? [];
                   const hasPhotos = albumPhotos.length > 0;
                   const firstPhoto = albumPhotos[0];
-                  const firstPhotoUrl = hasPhotos && firstPhoto?.path ? urls[firstPhoto.path] : null;
-                  const firstPreviewUrl = hasPhotos && firstPhoto?.preview_path ? previewUrls[firstPhoto.preview_path] : null;
+                  const firstPhotoUrl =
+                    hasPhotos && firstPhoto?.path ? urls[firstPhoto.path] : null;
+                  const firstPreviewUrl =
+                    hasPhotos && firstPhoto?.preview_path
+                      ? previewUrls[firstPhoto.preview_path]
+                      : null;
                   const isPrivateAlbum = album.is_private && !isConnected;
                   const request = albumRequests[album.id];
                   const isOwner = p.id === uid;
@@ -679,7 +778,9 @@ function ProfileView() {
                               <span className="mt-2 text-white/80 text-sm">Request sent</span>
                             )}
                             {request?.status === "declined" && (
-                              <span className="mt-2 text-white/80 text-sm text-red-300">Declined</span>
+                              <span className="mt-2 text-white/80 text-sm text-red-300">
+                                Declined
+                              </span>
                             )}
                             {request?.status === "approved" && (
                               <Button
@@ -744,12 +845,17 @@ function ProfileView() {
               </h3>
               <div className="flex flex-wrap gap-1.5">
                 {GENDERS.slice(0, 5).map((g) => (
-                  <span key={g} className="rounded-full bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
+                  <span
+                    key={g}
+                    className="rounded-full bg-secondary px-2.5 py-1 text-xs text-secondary-foreground"
+                  >
                     {g}
                   </span>
                 ))}
                 {GENDERS.length > 5 && (
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">+{GENDERS.length - 5} more</span>
+                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                    +{GENDERS.length - 5} more
+                  </span>
                 )}
               </div>
             </div>
@@ -769,16 +875,22 @@ function ProfileView() {
               <div className="space-y-2">
                 <Label>Reason</Label>
                 <Select value={reportReason} onValueChange={setReportReason}>
-                  <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a reason" />
+                  </SelectTrigger>
                   <SelectContent>
                     {REPORT_REASONS.map((r) => (
-                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                      <SelectItem key={r.value} value={r.value}>
+                        {r.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Details / Proof <span className="text-destructive">*</span></Label>
+                <Label>
+                  Details / Proof <span className="text-destructive">*</span>
+                </Label>
                 <Textarea
                   value={reportDescription}
                   onChange={(e) => setReportDescription(e.target.value)}
@@ -786,37 +898,81 @@ function ProfileView() {
                   rows={4}
                   required
                 />
-                <p className="text-xs text-muted-foreground">Be specific. Reports with details are reviewed faster.</p>
+                <p className="text-xs text-muted-foreground">
+                  Be specific. Reports with details are reviewed faster.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Attach Proof (Optional)</Label>
                 <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => fileRef.current?.click()} disabled={reporting}>
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={reporting}
+                  >
                     <FileText className="h-4 w-4 mr-2" /> Attach screenshot/document
                   </Button>
-                  <input ref={fileRef} type="file" accept="image/*,text/*,.pdf" hidden onChange={handleProofUpload} />
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*,text/*,.pdf"
+                    hidden
+                    onChange={handleProofUpload}
+                  />
                 </div>
                 {reportProofPreview && (
                   <div className="flex items-center gap-2 p-2 bg-muted rounded-lg">
                     {reportProofPreview.startsWith("blob:") ? (
-                      <img src={reportProofPreview} alt="Proof preview" className="h-16 w-auto rounded" />
+                      <img
+                        src={reportProofPreview}
+                        alt="Proof preview"
+                        className="h-16 w-auto rounded"
+                      />
                     ) : (
                       <span className="text-sm">{reportProofPreview}</span>
                     )}
-                    <Button variant="ghost" size="icon" onClick={() => { setReportProof(null); setReportProofPreview(null); if (fileRef.current) fileRef.current.value = ""; }}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setReportProof(null);
+                        setReportProofPreview(null);
+                        if (fileRef.current) fileRef.current.value = "";
+                      }}
+                    >
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
                 )}
               </div>
               <Label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={blockAfterReport} onChange={(e) => setBlockAfterReport(e.target.checked)} className="h-4 w-4" />
-                <span className="text-sm">Block this user after reporting (they won't be able to contact you)</span>
+                <input
+                  type="checkbox"
+                  checked={blockAfterReport}
+                  onChange={(e) => setBlockAfterReport(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm">
+                  Block this user after reporting (they won't be able to contact you)
+                </span>
               </Label>
             </div>
             <div className="flex gap-2 border-t pt-4">
-              <Button variant="outline" className="flex-1" onClick={() => setReportOpen(false)} disabled={reporting}>Cancel</Button>
-              <Button variant="destructive" className="flex-1" onClick={handleReport} disabled={reporting || !reportReason}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setReportOpen(false)}
+                disabled={reporting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={handleReport}
+                disabled={reporting || !reportReason}
+              >
                 {reporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : ""} Submit Report
               </Button>
             </div>
@@ -825,7 +981,10 @@ function ProfileView() {
 
         <PhotoViewer
           isOpen={photoViewerOpen}
-          onClose={() => { setPhotoViewerOpen(false); setViewerPhotos(null); }}
+          onClose={() => {
+            setPhotoViewerOpen(false);
+            setViewerPhotos(null);
+          }}
           photos={viewerPhotos ?? (isConnected ? allPhotos : visiblePhotos)}
           initialIndex={photoViewerIndex}
           urls={urls}

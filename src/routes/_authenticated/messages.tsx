@@ -6,7 +6,18 @@ import { useMe, useSigned, type Profile } from "@/lib/data";
 import { ProfileCard } from "@/components/app/ProfileCard";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MessageCircle, Loader2, Lock, Check, X, Eye, MoreHorizontal, User, Flag, UserX } from "lucide-react";
+import {
+  MessageCircle,
+  Loader2,
+  Lock,
+  Check,
+  X,
+  Eye,
+  MoreHorizontal,
+  User,
+  Flag,
+  UserX,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,12 +44,36 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 const REPORT_REASONS = [
-  { value: "spam", label: "Spam", description: "Unwanted messages, promotional content, or repetitive messaging" },
-  { value: "fraud", label: "Fraud/Scam", description: "Attempting to deceive for money, personal info, or financial gain" },
-  { value: "money_request", label: "Asking for Money", description: "Directly or indirectly requesting money, gifts, or financial help" },
-  { value: "fake_profile", label: "Fake Profile", description: "Using stolen photos, false identity, or misleading information" },
-  { value: "harassment", label: "Harassment", description: "Threats, abusive language, stalking, or unwanted persistent contact" },
-  { value: "inappropriate_content", label: "Inappropriate Content", description: "Explicit, offensive, or prohibited content in photos/bio" },
+  {
+    value: "spam",
+    label: "Spam",
+    description: "Unwanted messages, promotional content, or repetitive messaging",
+  },
+  {
+    value: "fraud",
+    label: "Fraud/Scam",
+    description: "Attempting to deceive for money, personal info, or financial gain",
+  },
+  {
+    value: "money_request",
+    label: "Asking for Money",
+    description: "Directly or indirectly requesting money, gifts, or financial help",
+  },
+  {
+    value: "fake_profile",
+    label: "Fake Profile",
+    description: "Using stolen photos, false identity, or misleading information",
+  },
+  {
+    value: "harassment",
+    label: "Harassment",
+    description: "Threats, abusive language, stalking, or unwanted persistent contact",
+  },
+  {
+    value: "inappropriate_content",
+    label: "Inappropriate Content",
+    description: "Explicit, offensive, or prohibited content in photos/bio",
+  },
   { value: "underage", label: "Underage User", description: "Appears to be under 18 years old" },
   { value: "other", label: "Other", description: "Something not listed here" },
 ];
@@ -57,23 +92,27 @@ function Messages() {
   const { data: me } = useMe();
   const uid = me?.user.id;
   const qc = useQueryClient();
-  const [albumRequests, setAlbumRequests] = useState<Array<{
-    id: string;
-    album_id: string;
-    requester_id: string;
-    status: string;
-    created_at: string;
-    album_name: string;
-    requester_name: string;
-    requester_photo: string | null;
-  }>>([]);
-  const [myApprovedRequests, setMyApprovedRequests] = useState<Array<{
-    album_id: string;
-    album_name: string;
-    owner_id: string;
-    owner_name: string;
-    owner_photo: string | null;
-  }>>([]);
+  const [albumRequests, setAlbumRequests] = useState<
+    Array<{
+      id: string;
+      album_id: string;
+      requester_id: string;
+      status: string;
+      created_at: string;
+      album_name: string;
+      requester_name: string;
+      requester_photo: string | null;
+    }>
+  >([]);
+  const [myApprovedRequests, setMyApprovedRequests] = useState<
+    Array<{
+      album_id: string;
+      album_name: string;
+      owner_id: string;
+      owner_name: string;
+      owner_photo: string | null;
+    }>
+  >([]);
 
   // Report dialog state
   const [reportOpen, setReportOpen] = useState(false);
@@ -169,7 +208,10 @@ function Messages() {
       const requesterIds = [...new Set(requests?.map((r) => r.requester_id) ?? [])];
       const [{ data: requesters }, { data: albums }] = await Promise.all([
         requesterIds.length
-          ? supabase.from("public_profiles").select("id,username,display_name").in("id", requesterIds)
+          ? supabase
+              .from("public_profiles")
+              .select("id,username,display_name")
+              .in("id", requesterIds)
           : { data: [] },
         supabase.from("photo_albums").select("id, name").in("id", albumIds),
       ]);
@@ -225,10 +267,7 @@ function Messages() {
         supabase
           .from("public_profiles")
           .select("id,username,display_name")
-          .in(
-            "id",
-            [...new Set((albums?.data ?? []).map((a) => a.user_id))],
-          ),
+          .in("id", [...new Set((albums?.data ?? []).map((a) => a.user_id))]),
       ]);
 
       const ownerPhotos = await Promise.all(
@@ -266,19 +305,16 @@ function Messages() {
     if (myRequests) setMyApprovedRequests(myRequests);
   }, [myRequests]);
 
-  const urls = useSigned(
-    "photos",
-    [
-      ...(inboxData ?? []).map((d) => d.photo),
-      ...albumRequests.map((r) => r.requester_photo).filter(Boolean) as string[],
-      ...myApprovedRequests.map((r) => r.owner_photo).filter(Boolean) as string[],
-    ],
-  );
+  const urls = useSigned("photos", [
+    ...(inboxData ?? []).map((d) => d.photo),
+    ...(albumRequests.map((r) => r.requester_photo).filter(Boolean) as string[]),
+    ...(myApprovedRequests.map((r) => r.owner_photo).filter(Boolean) as string[]),
+  ]);
 
   const previewUrls = useSigned("photo-previews", [
     ...(inboxData ?? []).map((d) => d.photo),
-    ...albumRequests.map((r) => r.requester_photo).filter(Boolean) as string[],
-    ...myApprovedRequests.map((r) => r.owner_photo).filter(Boolean) as string[],
+    ...(albumRequests.map((r) => r.requester_photo).filter(Boolean) as string[]),
+    ...(myApprovedRequests.map((r) => r.owner_photo).filter(Boolean) as string[]),
   ]);
 
   const handleApprove = async (requestId: string) => {
@@ -315,7 +351,11 @@ function Messages() {
       toast.error("Proof file must be under 5MB");
       return;
     }
-    if (!file.type.startsWith("image/") && !file.type.startsWith("text/") && file.type !== "application/pdf") {
+    if (
+      !file.type.startsWith("image/") &&
+      !file.type.startsWith("text/") &&
+      file.type !== "application/pdf"
+    ) {
       toast.error("Proof must be an image, text file, or PDF");
       return;
     }
@@ -475,11 +515,7 @@ function Messages() {
                       </p>
                     </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    asChild
-                  >
+                  <Button variant="outline" size="sm" asChild>
                     <Link to="/profile/$username" params={{ username: r.owner_id }}>
                       <Eye className="h-3 w-3 mr-1" /> View Profile
                     </Link>
@@ -576,15 +612,12 @@ function Messages() {
                     </div>
                     {d.lastMessage && (
                       <p className="text-sm text-muted-foreground truncate max-w-[400px]">
-                        {d.lastMessage.body ?? (d.lastMessage.attachment_path ? "📎 Attachment" : "")}
+                        {d.lastMessage.body ??
+                          (d.lastMessage.attachment_path ? "📎 Attachment" : "")}
                       </p>
                     )}
                   </div>
-                  <Button
-                    asChild
-                    variant="ghost"
-                    className="ml-auto"
-                  >
+                  <Button asChild variant="ghost" className="ml-auto">
                     <Link to="/chat/$id" params={{ id: d.connection.id }}>
                       <MessageCircle className="h-5 w-5" />
                     </Link>
@@ -632,7 +665,9 @@ function Messages() {
                 rows={4}
                 required
               />
-              <p className="text-xs text-muted-foreground">Be specific. Reports with details are reviewed faster.</p>
+              <p className="text-xs text-muted-foreground">
+                Be specific. Reports with details are reviewed faster.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Attach Proof (Optional)</Label>
@@ -691,10 +726,20 @@ function Messages() {
             </Label>
           </div>
           <div className="flex gap-2 border-t pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => setReportOpen(false)} disabled={reporting}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setReportOpen(false)}
+              disabled={reporting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" className="flex-1" onClick={handleReportSubmit} disabled={reporting || !reportReason}>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              onClick={handleReportSubmit}
+              disabled={reporting || !reportReason}
+            >
               {reporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : ""} Submit Report
             </Button>
           </div>

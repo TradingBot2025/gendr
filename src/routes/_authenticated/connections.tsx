@@ -35,12 +35,36 @@ import { FileText } from "lucide-react";
 import { useRef, useState } from "react";
 
 const REPORT_REASONS = [
-  { value: "spam", label: "Spam", description: "Unwanted messages, promotional content, or repetitive messaging" },
-  { value: "fraud", label: "Fraud/Scam", description: "Attempting to deceive for money, personal info, or financial gain" },
-  { value: "money_request", label: "Asking for Money", description: "Directly or indirectly requesting money, gifts, or financial help" },
-  { value: "fake_profile", label: "Fake Profile", description: "Using stolen photos, false identity, or misleading information" },
-  { value: "harassment", label: "Harassment", description: "Threats, abusive language, stalking, or unwanted persistent contact" },
-  { value: "inappropriate_content", label: "Inappropriate Content", description: "Explicit, offensive, or prohibited content in photos/bio" },
+  {
+    value: "spam",
+    label: "Spam",
+    description: "Unwanted messages, promotional content, or repetitive messaging",
+  },
+  {
+    value: "fraud",
+    label: "Fraud/Scam",
+    description: "Attempting to deceive for money, personal info, or financial gain",
+  },
+  {
+    value: "money_request",
+    label: "Asking for Money",
+    description: "Directly or indirectly requesting money, gifts, or financial help",
+  },
+  {
+    value: "fake_profile",
+    label: "Fake Profile",
+    description: "Using stolen photos, false identity, or misleading information",
+  },
+  {
+    value: "harassment",
+    label: "Harassment",
+    description: "Threats, abusive language, stalking, or unwanted persistent contact",
+  },
+  {
+    value: "inappropriate_content",
+    label: "Inappropriate Content",
+    description: "Explicit, offensive, or prohibited content in photos/bio",
+  },
   { value: "underage", label: "Underage User", description: "Appears to be under 18 years old" },
   { value: "other", label: "Other", description: "Something not listed here" },
 ];
@@ -275,7 +299,9 @@ function Connections() {
                 </SelectTrigger>
                 <SelectContent>
                   {REPORT_REASONS.map((r) => (
-                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    <SelectItem key={r.value} value={r.value}>
+                      {r.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -291,7 +317,9 @@ function Connections() {
                 rows={4}
                 required
               />
-              <p className="text-xs text-muted-foreground">Be specific. Reports with details are reviewed faster.</p>
+              <p className="text-xs text-muted-foreground">
+                Be specific. Reports with details are reviewed faster.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Attach Proof (Optional)</Label>
@@ -316,7 +344,11 @@ function Connections() {
                       toast.error("Proof file must be under 5MB");
                       return;
                     }
-                    if (!file.type.startsWith("image/") && !file.type.startsWith("text/") && file.type !== "application/pdf") {
+                    if (
+                      !file.type.startsWith("image/") &&
+                      !file.type.startsWith("text/") &&
+                      file.type !== "application/pdf"
+                    ) {
                       toast.error("Proof must be an image, text file, or PDF");
                       return;
                     }
@@ -332,7 +364,11 @@ function Connections() {
               {reportProofPreview && (
                 <div className="flex items-center gap-2 p-2 bg-muted rounded-lg">
                   {reportProofPreview.startsWith("blob:") ? (
-                    <img src={reportProofPreview} alt="Proof preview" className="h-16 w-auto rounded" />
+                    <img
+                      src={reportProofPreview}
+                      alt="Proof preview"
+                      className="h-16 w-auto rounded"
+                    />
                   ) : (
                     <span className="text-sm">{reportProofPreview}</span>
                   )}
@@ -363,45 +399,55 @@ function Connections() {
             </Label>
           </div>
           <div className="flex gap-2 border-t pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => setReportOpen(false)} disabled={reporting}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setReportOpen(false)}
+              disabled={reporting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" className="flex-1" onClick={async () => {
-              if (!reportReason) {
-                toast.error("Please select a reason");
-                return;
-              }
-              if (blockAfterReport && !reportDescription.trim()) {
-                toast.error("Please provide details/proof for the report");
-                return;
-              }
-              setReporting(true);
-              try {
-                const { error } = await supabase.from("reports").insert({
-                  reporter_id: uid,
-                  reported_id: reportTargetId,
-                  reason: reportDescription.trim(),
-                  reason_category: reportReason,
-                  auto_blocked: blockAfterReport,
-                });
-                if (error) throw error;
+            <Button
+              variant="destructive"
+              className="flex-1"
+              onClick={async () => {
+                if (!reportReason) {
+                  toast.error("Please select a reason");
+                  return;
+                }
+                if (blockAfterReport && !reportDescription.trim()) {
+                  toast.error("Please provide details/proof for the report");
+                  return;
+                }
+                setReporting(true);
+                try {
+                  const { error } = await supabase.from("reports").insert({
+                    reporter_id: uid,
+                    reported_id: reportTargetId,
+                    reason: reportDescription.trim(),
+                    reason_category: reportReason,
+                    auto_blocked: blockAfterReport,
+                  });
+                  if (error) throw error;
 
-                toast.success("Report submitted" + (blockAfterReport ? " and user blocked" : ""));
-                setReportOpen(false);
-                setReportReason("");
-                setReportDescription("");
-                setReportProof(null);
-                setReportProofPreview(null);
-                if (fileRef.current) fileRef.current.value = "";
-                qc.invalidateQueries({ queryKey: ["discover"] });
-                qc.invalidateQueries({ queryKey: ["connections"] });
-              } catch (err) {
-                const message = err instanceof Error ? err.message : String(err);
-                toast.error(message ?? "Failed to submit report");
-              } finally {
-                setReporting(false);
-              }
-            }} disabled={reporting || !reportReason}>
+                  toast.success("Report submitted" + (blockAfterReport ? " and user blocked" : ""));
+                  setReportOpen(false);
+                  setReportReason("");
+                  setReportDescription("");
+                  setReportProof(null);
+                  setReportProofPreview(null);
+                  if (fileRef.current) fileRef.current.value = "";
+                  qc.invalidateQueries({ queryKey: ["discover"] });
+                  qc.invalidateQueries({ queryKey: ["connections"] });
+                } catch (err) {
+                  const message = err instanceof Error ? err.message : String(err);
+                  toast.error(message ?? "Failed to submit report");
+                } finally {
+                  setReporting(false);
+                }
+              }}
+              disabled={reporting || !reportReason}
+            >
               {reporting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : ""} Submit Report
             </Button>
           </div>
