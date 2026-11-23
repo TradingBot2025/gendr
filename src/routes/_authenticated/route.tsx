@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Compass, Heart, LayoutDashboard, LogOut, Shield, Shuffle, User, Album, Users as UsersIcon, Settings } from "lucide-react";
+import { Compass, Heart, LayoutDashboard, LogOut, Shield, Shuffle, User, Album, Users as UsersIcon, Settings, MessageCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
 import { toast } from "sonner";
@@ -66,6 +66,14 @@ function Shell() {
     ...(me.isAdmin ? [{ to: "/admin", label: "Admin", icon: Shield }] : []),
   ] as const;
 
+  // Mobile bottom nav - simplified to 4 items
+  const mobileNav = [
+    { to: "/discover", label: "Discover", icon: Compass },
+    { to: "/connections", label: "Matches", icon: Heart, badge: unread > 0 ? unread : undefined },
+    { to: "/random", label: "Random", icon: Shuffle },
+    { to: "/account", label: "Account", icon: Settings },
+  ] as const;
+
   const gated = !me.complete && !path.startsWith("/profile") && !path.startsWith("/account");
   const inChat = path.startsWith("/chat/");
 
@@ -99,9 +107,9 @@ function Shell() {
         </main>
         {!inChat && (
           <nav className="fixed bottom-0 left-0 right-0 z-40 flex justify-around border-t bg-card py-2 md:hidden">
-            {nav.map((n) => (
+            {mobileNav.map((n) => (
               <Link key={n.to} to={n.to} className="flex flex-col items-center gap-0.5 px-2 text-[11px] text-muted-foreground" activeProps={{ className: "text-primary" }}>
-                <n.icon className="h-5 w-5" />{n.label}
+                <n.icon className="h-5 w-5" />{n.label}{n.badge && <span className="ml-auto inline-flex items-center justify-center min-h-4 w-4 rounded-full bg-destructive px-1 text-[9px] text-destructive-foreground">{n.badge > 9 ? "9+" : n.badge}</span>}
               </Link>
             ))}
           </nav>

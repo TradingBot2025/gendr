@@ -1,14 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { BadgeCheck, Camera, ImagePlus, Star, Trash2, Lock, Clock, Plus, ShieldCheck, FileText, LogOut } from "lucide-react";
 import { deleteAccount } from "@/lib/delete-account.functions";
-import { useMe } from "@/lib/data";
+import { useMe, useSigned, GENDERS, ORIENTATIONS, usePhotoAlbums, type PhotoAlbum } from "@/lib/data";
+import { verifyFace } from "@/lib/verify.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, FileText, ShieldCheck } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/_authenticated/account")({

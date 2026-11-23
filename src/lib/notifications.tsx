@@ -228,7 +228,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   return (
     <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead, removeNotification }}>
       {children}
-      <NotificationBell />
+      {/* NotificationBell removed - using toast notifications at top-center instead */}
     </NotificationContext.Provider>
   );
 }
