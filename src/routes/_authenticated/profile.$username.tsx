@@ -96,7 +96,10 @@ const REPORT_REASONS = [
 ];
 
 const PROFILE_COLUMNS =
-  "id,username,display_name,gender,orientation,birthdate,bio,city,country,verified,is_online,last_seen_at,banned,looking_for,height,weight,education,children,marital_status,created_at";
+  "id,username,display_name,gender,orientation,birthdate,bio,city,country,verified,is_online,last_seen_at,banned,looking_for,created_at";
+// Extended columns (height, weight, education, children, marital_status) require
+// migration 0006. They are NOT selected here so profile viewing works even before
+// the migration is applied. Once the columns exist, add them to PROFILE_COLUMNS.
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

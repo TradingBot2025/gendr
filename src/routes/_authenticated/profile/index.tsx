@@ -147,25 +147,34 @@ function ProfilePage() {
       return;
     }
     setSaving(true);
-    const { error } = await supabase
+    const baseFields = {
+      display_name: form.display_name.trim().slice(0, 60),
+      username: form.username?.trim() || null,
+      gender: form.gender || null,
+      orientation: form.orientation || null,
+      birthdate: form.birthdate || null,
+      city: form.city.trim().slice(0, 80) || null,
+      country: form.country.trim().slice(0, 80) || null,
+      bio: form.bio.trim().slice(0, 500) || null,
+      looking_for: form.looking_for || null,
+    };
+    const extendedFields = {
+      height: form.height ? Number(form.height) : null,
+      weight: form.weight ? Number(form.weight) : null,
+      education: form.education || null,
+      children: form.children || null,
+      marital_status: form.marital_status || null,
+    };
+    // Try the full update first; if the extended columns aren't in the DB yet
+    // (migration 0006 not applied), fall back to base fields only.
+    let { error } = await supabase
       .from("profiles")
-      .update({
-        display_name: form.display_name.trim().slice(0, 60),
-        username: form.username?.trim() || null,
-        gender: form.gender || null,
-        orientation: form.orientation || null,
-        birthdate: form.birthdate || null,
-        city: form.city.trim().slice(0, 80) || null,
-        country: form.country.trim().slice(0, 80) || null,
-        bio: form.bio.trim().slice(0, 500) || null,
-        looking_for: form.looking_for || null,
-        height: form.height ? Number(form.height) : null,
-        weight: form.weight ? Number(form.weight) : null,
-        education: form.education || null,
-        children: form.children || null,
-        marital_status: form.marital_status || null,
-      })
+      .update({ ...baseFields, ...extendedFields })
       .eq("id", me.user.id);
+    if (error) {
+      const retry = await supabase.from("profiles").update(baseFields).eq("id", me.user.id);
+      error = retry.error;
+    }
     setSaving(false);
     if (error) {
       toast.error(error.message);
