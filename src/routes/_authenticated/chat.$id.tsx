@@ -14,8 +14,6 @@ import {
   Image,
   Eye,
   EyeOff,
-  Music,
-  VolumeX,
   Mic,
   MicOff,
   Camera,
@@ -469,28 +467,39 @@ function Chat() {
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-3 border-b bg-card p-3">
-        <Button asChild size="icon" variant="ghost">
-          <Link to="/connections" aria-label="Back">
+      <header className="flex items-center gap-2 border-b bg-card p-3">
+        <Button asChild size="icon" variant="ghost" className="shrink-0">
+          <Link to="/messages" aria-label="Back">
             <ArrowLeft />
           </Link>
         </Button>
-        <div className="h-10 w-10 overflow-hidden rounded-full bg-muted">
-          {info.photo && purls[info.photo] ? (
-            <img src={purls[info.photo]} alt={name} className="h-full w-full object-cover" />
-          ) : (
-            <span className="flex h-full items-center justify-center">{name[0]}</span>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold truncate">{name}</div>
-          <div className="text-[11px] text-muted-foreground truncate">
-            Messages disappear after {disappearLabel}
+        <Link
+          to="/profile/$username"
+          params={{ username: info.peer?.username ?? info.pid }}
+          className="flex min-w-0 flex-1 items-center gap-2"
+        >
+          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-muted">
+            {info.photo && purls[info.photo] ? (
+              <img src={purls[info.photo]} alt={name} className="h-full w-full object-cover" />
+            ) : (
+              <span className="flex h-full items-center justify-center">{name[0]}</span>
+            )}
           </div>
-        </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-semibold">{name}</div>
+            <div className="truncate text-[11px] text-muted-foreground">
+              {info.peer?.is_online
+                ? "Online"
+                : info.peer?.last_seen_at
+                  ? `Last seen ${new Date(info.peer.last_seen_at).toLocaleDateString()}`
+                  : `Messages disappear after ${disappearLabel}`}
+            </div>
+          </div>
+        </Link>
         <Button
           size="icon"
           variant="ghost"
+          className="shrink-0"
           onClick={() => call.start(info.pid, name, false)}
           aria-label="Voice call"
         >
@@ -499,6 +508,7 @@ function Chat() {
         <Button
           size="icon"
           variant="ghost"
+          className="shrink-0"
           onClick={() => call.start(info.pid, name, true)}
           aria-label="Video call"
         >
@@ -509,7 +519,7 @@ function Chat() {
             <Button
               size="icon"
               variant="ghost"
-              className="h-8 w-8 rounded-full"
+              className="h-8 w-8 shrink-0 rounded-full"
               aria-label="More options"
             >
               <MoreHorizontal className="h-5 w-5" />
@@ -518,17 +528,8 @@ function Chat() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuItem asChild>
               <Link to="/profile/$username" params={{ username: info.peer?.username ?? info.pid }}>
-                <User className="h-4 w-4 mr-2" /> View Profile
+                <User className="h-4 w-4 mr-2" /> View profile
               </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                setReportOpen(true);
-                setReportTargetId(info.pid);
-                setReportTargetName(name);
-              }}
-            >
-              <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
             </DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
@@ -543,6 +544,27 @@ function Chat() {
                 ))}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            <DropdownMenuItem onClick={() => setNotificationsEnabled(!notificationsEnabled)}>
+              {notificationsEnabled ? (
+                <EyeOff className="h-4 w-4 mr-2" />
+              ) : (
+                <Eye className="h-4 w-4 mr-2" />
+              )}
+              {notificationsEnabled ? "Mute this chat" : "Unmute this chat"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={openExpired}>
+              <ShieldCheck className="h-4 w-4 mr-2" /> Chat privacy info
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => {
+                setReportOpen(true);
+                setReportTargetId(info.pid);
+                setReportTargetName(name);
+              }}
+            >
+              <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => {
@@ -564,22 +586,6 @@ function Chat() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={() => setAudioEnabled(!audioEnabled)}
-          aria-label={audioEnabled ? "Mute sounds" : "Enable sounds"}
-        >
-          {audioEnabled ? <VolumeX className="h-4 w-4" /> : <Music className="h-4 w-4" />}
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-          aria-label={notificationsEnabled ? "Disable notifications" : "Enable notifications"}
-        >
-          {notificationsEnabled ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-        </Button>
       </header>
 
       <Dialog open={expNotice} onOpenChange={setExpNotice}>
@@ -898,11 +904,6 @@ function Chat() {
           >
             <Paperclip className="h-4 w-4" />
           </Button>
-          {maxViews !== null && (
-            <span className="px-2 py-0.5 text-[10px] rounded bg-accent text-accent-foreground">
-              {maxViews === 1 ? "1️⃣ View" : `${maxViews} views`}
-            </span>
-          )}
         </div>
         <Input
           value={text}
@@ -914,17 +915,6 @@ function Chat() {
           <Send />
         </Button>
       </form>
-
-      <div className="fixed bottom-1 left-1/2 -translate-x-1/2 z-40">
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={openExpired}
-          className="h-8 w-8 rounded-full bg-card border shadow-lg"
-        >
-          <ShieldCheck className="h-4 w-4" />
-        </Button>
-      </div>
 
       <PhotoViewer
         isOpen={photoViewerOpen}
