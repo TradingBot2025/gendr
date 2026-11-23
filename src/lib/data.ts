@@ -95,11 +95,29 @@ export const MARITAL_STATUS_OPTIONS = [
 
 export function ageOf(birthdate: string | null): number | null {
   if (!birthdate) return null;
-  const b = new Date(birthdate);
+  // Parse the date-only string manually. `new Date("YYYY-MM-DD")` is parsed as
+  // UTC midnight, which reports the previous day in negative UTC offsets and can
+  // throw the age (and any derived date) off by one — the classic "date shows
+  // incorrectly" bug. Manual parsing also avoids rendering "NaN" for bad values.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(birthdate);
+  let by: number;
+  let bm: number;
+  let bd: number;
+  if (m) {
+    by = parseInt(m[1], 10);
+    bm = parseInt(m[2], 10) - 1;
+    bd = parseInt(m[3], 10);
+  } else {
+    const d = new Date(birthdate);
+    if (Number.isNaN(d.getTime())) return null;
+    by = d.getFullYear();
+    bm = d.getMonth();
+    bd = d.getDate();
+  }
+  if (!by || Number.isNaN(by)) return null;
   const n = new Date();
-  let a = n.getFullYear() - b.getFullYear();
-  if (n.getMonth() < b.getMonth() || (n.getMonth() === b.getMonth() && n.getDate() < b.getDate()))
-    a--;
+  let a = n.getFullYear() - by;
+  if (n.getMonth() < bm || (n.getMonth() === bm && n.getDate() < bd)) a--;
   return a;
 }
 
