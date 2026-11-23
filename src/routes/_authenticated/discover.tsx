@@ -142,14 +142,18 @@ function Discover() {
   };
 
   const actionFor = (
-    profile: PublicProfile & { connection_status: string; connection_id: string | null },
+    profile: PublicProfile & {
+      connection_status: string;
+      connection_id: string | null;
+      connection_requester: string | null;
+    },
   ) => {
     const c =
       profile.connection_status !== "none"
         ? {
             status: profile.connection_status,
             id: profile.connection_id,
-            requester: me?.user.id,
+            requester: profile.connection_requester,
             addressee: profile.id,
           }
         : null;
@@ -427,6 +431,7 @@ function Discover() {
                   photo_path: string | null;
                   connection_status: string;
                   connection_id: string | null;
+                  connection_requester: string | null;
                 }) => {
                   const profileUsername =
                     p.username && p.username.trim() !== "" ? p.username : p.viewer_id;
@@ -444,6 +449,29 @@ function Discover() {
                               <Link to="/chat/$id" params={{ id: p.connection_id ?? "" }}>
                                 Chat
                               </Link>
+                            </Button>
+                          ) : p.connection_status === "pending" &&
+                            p.connection_requester !== me?.user.id ? (
+                            <div className="flex gap-2 w-full">
+                              <Button
+                                variant="success"
+                                className="flex-1"
+                                onClick={() => respond(p.connection_id!, "accepted")}
+                              >
+                                Accept
+                              </Button>
+                              <Button
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => respond(p.connection_id!, "declined")}
+                              >
+                                Decline
+                              </Button>
+                            </div>
+                          ) : p.connection_status === "pending" &&
+                            p.connection_requester === me?.user.id ? (
+                            <Button variant="secondary" disabled className="w-full">
+                              Waiting for response…
                             </Button>
                           ) : (
                             <Button

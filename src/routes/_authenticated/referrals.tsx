@@ -2,8 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useMe } from "@/lib/data";
-import { createReferral } from "@/lib/data";
+import { useMe, createReferral, type Referral } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Link, Share, Copy } from "lucide-react";
@@ -22,7 +21,7 @@ function Referrals() {
   const { data: me } = useMe();
   const [code, setCode] = useState("");
   const [creating, setCreating] = useState(false);
-  const [referrals, setReferrals] = useState<any[]>([]);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
   const [autoLink, setAutoLink] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -42,8 +41,9 @@ function Referrals() {
       toast.success("Referral code created");
       setCode("");
       load();
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message ?? "Failed");
     } finally {
       setCreating(false);
     }
@@ -60,24 +60,28 @@ function Referrals() {
 
   const share = (c: string) => {
     const url = `${window.location.origin}/auth?ref=${c}`;
-    navigator.share
-      ? navigator.share({ title: "Join Gender", text: "Join me on Gender dating!", url })
-      : navigator.clipboard.writeText(url).then(() => {
-          toast.success("Link copied");
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        });
+    if (navigator.share) {
+      navigator.share({ title: "Join Gender", text: "Join me on Gender dating!", url });
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        toast.success("Link copied");
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
   };
 
   const shareAutoLink = () => {
     if (!autoLink) return;
-    navigator.share
-      ? navigator.share({ title: "Join Gender", text: "Join me on Gender dating!", url: autoLink })
-      : navigator.clipboard.writeText(autoLink).then(() => {
-          toast.success("Referral link copied");
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        });
+    if (navigator.share) {
+      navigator.share({ title: "Join Gender", text: "Join me on Gender dating!", url: autoLink });
+    } else {
+      navigator.clipboard.writeText(autoLink).then(() => {
+        toast.success("Referral link copied");
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
   };
 
   if (!me) return null;

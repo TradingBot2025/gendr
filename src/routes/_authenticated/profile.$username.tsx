@@ -127,19 +127,12 @@ function ProfileView() {
     enabled: !!uid,
     queryFn: async () => {
       // Try to find by username first, then fall back to ID (for legacy users without username)
-      let { data: p } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("username", username)
-        .maybeSingle();
+      // Use get_public_profile RPC which returns safe columns only (age instead of birthdate)
+      let { data: p } = await supabase.rpc("get_public_profile", { _user_id: username });
 
       // If not found by username, try by ID (in case username is a UUID)
       if (!p) {
-        const { data: pById } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", username)
-          .maybeSingle();
+        const { data: pById } = await supabase.rpc("get_public_profile", { _user_id: username });
         p = pById;
       }
 
@@ -227,11 +220,15 @@ function ProfileView() {
   // Check if all visible photos are private (for blur logic)
   const hasMainPhotos = mainPhotos.length > 0;
   const allVisiblePrivate =
-    visiblePhotos.length > 0 && visiblePhotos.every((ph: { is_private: boolean }) => ph.is_private === true);
+    visiblePhotos.length > 0 &&
+    visiblePhotos.every((ph: { is_private: boolean }) => ph.is_private === true);
   const showMainBlur = !isConnected && allVisiblePrivate && profile.profile?.id !== uid;
 
   // If no main photos but has private albums with photos, use first private album's first photo as blurred main
-  const privateAlbumWithPhotos = albums.find((a: { is_private: boolean; photos?: { length: number }[] }) => a.is_private && a.photos?.length > 0);
+  const privateAlbumWithPhotos = albums.find(
+    (a: { is_private: boolean; photos?: { length: number }[] }) =>
+      a.is_private && a.photos?.length > 0,
+  );
   const fallbackMainPhoto = privateAlbumWithPhotos?.photos?.[0];
   const showFallbackBlur =
     !isConnected && !hasMainPhotos && fallbackMainPhoto && profile.profile?.id !== uid;
@@ -376,53 +373,55 @@ function ProfileView() {
             {mainPhotos.length > 0 && (
               <div>
                 <div className="h-full w-full overflow-hidden">
-                  {mainPhotos.map((ph: { id: string; path: string; is_private: boolean }, i: number) => (
-                    <Button
-                      key={ph.id}
-                      variant="ghost"
-                      className="h-full w-full p-0"
-                      onClick={() => {
-                        if (showMainBlur && i === 0) {
-                          setShowPrivateRequest(true);
-                          return;
-                        }
-                        setViewerPhotos(null);
-                        setPhotoViewerIndex(i);
-                        setPhotoViewerOpen(true);
-                      }}
-                    >
-                      <div className="relative h-full w-full">
-                        <img
-                          src={urls[ph.path] || ""}
-                          alt={`${p.display_name}'s photo ${i + 1}`}
-                          className={`h-full w-full object-cover ${showMainBlur && i === 0 ? "blur-[20px]" : ""}`}
-                          loading={i === 0 ? "eager" : "lazy"}
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                          }}
-                        />
-                        {showMainBlur && i === 0 && (
-                          <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
-                            <Lock className="h-12 w-12 text-white/90 mb-3" />
-                            <p className="text-white text-lg font-semibold">Private Photos</p>
-                            <p className="text-white/70 text-sm mt-1">
-                              This user's photos are private
-                            </p>
-                            <Button
-                              variant="default"
-                              className="mt-4 bg-primary text-primary-foreground"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShowPrivateRequest(true);
-                              }}
-                            >
-                              <UserPlus className="h-4 w-4 mr-2" /> Request Access
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </Button>
-                  ))}
+                  {mainPhotos.map(
+                    (ph: { id: string; path: string; is_private: boolean }, i: number) => (
+                      <Button
+                        key={ph.id}
+                        variant="ghost"
+                        className="h-full w-full p-0"
+                        onClick={() => {
+                          if (showMainBlur && i === 0) {
+                            setShowPrivateRequest(true);
+                            return;
+                          }
+                          setViewerPhotos(null);
+                          setPhotoViewerIndex(i);
+                          setPhotoViewerOpen(true);
+                        }}
+                      >
+                        <div className="relative h-full w-full">
+                          <img
+                            src={urls[ph.path] || ""}
+                            alt={`${p.display_name}'s photo ${i + 1}`}
+                            className={`h-full w-full object-cover ${showMainBlur && i === 0 ? "blur-[20px]" : ""}`}
+                            loading={i === 0 ? "eager" : "lazy"}
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                          {showMainBlur && i === 0 && (
+                            <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
+                              <Lock className="h-12 w-12 text-white/90 mb-3" />
+                              <p className="text-white text-lg font-semibold">Private Photos</p>
+                              <p className="text-white/70 text-sm mt-1">
+                                This user's photos are private
+                              </p>
+                              <Button
+                                variant="default"
+                                className="mt-4 bg-primary text-primary-foreground"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowPrivateRequest(true);
+                                }}
+                              >
+                                <UserPlus className="h-4 w-4 mr-2" /> Request Access
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </Button>
+                    ),
+                  )}
                 </div>
                 {mainPhotos.length > 1 && (
                   <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
@@ -651,72 +650,80 @@ function ProfileView() {
             Albums ({albums.length})
           </h3>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {albums.map((album: { id: string; is_private: boolean; photos?: { path: string }[]; name: string }) => {
-              const albumPhotos = album.photos ?? [];
-              const hasPhotos = albumPhotos.length > 0;
-              const firstPhotoUrl =
-                hasPhotos && albumPhotos[0]?.path ? urls[albumPhotos[0].path] : null;
-              const isPrivateAlbum = album.is_private && !isConnected;
+            {albums.map(
+              (album: {
+                id: string;
+                is_private: boolean;
+                photos?: { path: string }[];
+                name: string;
+              }) => {
+                const albumPhotos = album.photos ?? [];
+                const hasPhotos = albumPhotos.length > 0;
+                const firstPhotoUrl =
+                  hasPhotos && albumPhotos[0]?.path ? urls[albumPhotos[0].path] : null;
+                const isPrivateAlbum = album.is_private && !isConnected;
 
-              return (
-                <Button
-                  key={album.id}
-                  variant="ghost"
-                  className="rounded-3xl border bg-card overflow-hidden shadow-soft h-auto p-0"
-                  onClick={() => {
-                    if (isPrivateAlbum && hasPhotos) {
-                      setShowPrivateRequest(true);
-                      return;
-                    }
-                    hasPhotos &&
-                      (setViewerPhotos(albumPhotos),
-                      setPhotoViewerIndex(0),
-                      setPhotoViewerOpen(true));
-                  }}
-                  disabled={!hasPhotos}
-                >
-                  <div className="aspect-[4/5] bg-muted relative">
-                    {firstPhotoUrl ? (
-                      <img
-                        src={firstPhotoUrl}
-                        alt={album.name}
-                        className={`h-full w-full object-cover ${isPrivateAlbum ? "blur-[20px]" : ""}`}
-                        loading="lazy"
-                        onError={(e) => {
-                          e.currentTarget.style.display = "none";
-                        }}
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">
-                        {album.name?.[0]}
-                      </div>
-                    )}
-                    {isPrivateAlbum && (
-                      <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
-                        <Lock className="h-8 w-8 text-white/90 mb-2" />
-                        <p className="text-white text-sm font-medium">Private Album</p>
-                        <Button
-                          variant="default"
-                          className="mt-3 bg-primary text-primary-foreground"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowPrivateRequest(true);
+                return (
+                  <Button
+                    key={album.id}
+                    variant="ghost"
+                    className="rounded-3xl border bg-card overflow-hidden shadow-soft h-auto p-0"
+                    onClick={() => {
+                      if (isPrivateAlbum && hasPhotos) {
+                        setShowPrivateRequest(true);
+                        return;
+                      }
+                      if (hasPhotos) {
+                        setViewerPhotos(albumPhotos);
+                        setPhotoViewerIndex(0);
+                        setPhotoViewerOpen(true);
+                      }
+                    }}
+                    disabled={!hasPhotos}
+                  >
+                    <div className="aspect-[4/5] bg-muted relative">
+                      {firstPhotoUrl ? (
+                        <img
+                          src={firstPhotoUrl}
+                          alt={album.name}
+                          className={`h-full w-full object-cover ${isPrivateAlbum ? "blur-[20px]" : ""}`}
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
                           }}
-                        >
-                          <UserPlus className="h-3 w-3 mr-1" /> Request Access
-                        </Button>
-                      </div>
-                    )}
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent p-4 text-stage-foreground">
-                      <div className="font-semibold">{album.name}</div>
-                      <div className="text-sm opacity-90">
-                        {albumPhotos.length} photo{albumPhotos.length !== 1 ? "s" : ""}
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">
+                          {album.name?.[0]}
+                        </div>
+                      )}
+                      {isPrivateAlbum && (
+                        <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
+                          <Lock className="h-8 w-8 text-white/90 mb-2" />
+                          <p className="text-white text-sm font-medium">Private Album</p>
+                          <Button
+                            variant="default"
+                            className="mt-3 bg-primary text-primary-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowPrivateRequest(true);
+                            }}
+                          >
+                            <UserPlus className="h-3 w-3 mr-1" /> Request Access
+                          </Button>
+                        </div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent p-4 text-stage-foreground">
+                        <div className="font-semibold">{album.name}</div>
+                        <div className="text-sm opacity-90">
+                          {albumPhotos.length} photo{albumPhotos.length !== 1 ? "s" : ""}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Button>
-              );
-            })}
+                  </Button>
+                );
+              },
+            )}
           </div>
         </div>
       )}

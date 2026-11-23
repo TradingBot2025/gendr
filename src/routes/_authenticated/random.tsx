@@ -62,11 +62,6 @@ const COUNTRIES = [
   { code: "NO", name: "🇳🇴 Norway" },
   { code: "DK", name: "🇩🇰 Denmark" },
   { code: "FI", name: "🇫🇮 Finland" },
-  { code: "JP", name: "🇯🇵 Japan" },
-  { code: "KR", name: "🇰🇷 South Korea" },
-  { code: "SG", name: "🇸🇬 Singapore" },
-  { code: "NZ", name: "🇳🇿 New Zealand" },
-  { code: "IE", name: "🇮🇪 Ireland" },
   { code: "CH", name: "🇨🇭 Switzerland" },
   { code: "AT", name: "🇦🇹 Austria" },
   { code: "BE", name: "🇧🇪 Belgium" },
@@ -117,6 +112,7 @@ function Random() {
   const countryRef = useRef(selectedCountry);
   countryRef.current = selectedCountry;
   const peerIdRef = useRef<string | null>(null);
+  const matchInitiatedRef = useRef(false);
 
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
@@ -149,20 +145,28 @@ function Random() {
   const findMatch = async () => {
     if (!uid || !consentGiven) return;
     try {
-      const { data, error } = await supabase.rpc("find_random_match", {
-        _country_code: countryRef.current,
-      });
+      const { data, error } = await Promise.resolve(
+        supabase.rpc("find_random_match", {
+          _country_code: countryRef.current,
+        }),
+      );
       if (error) throw error;
       if (data && data.length > 0) {
         const peer = data[0];
         peerIdRef.current = peer.peer_id;
+        matchInitiatedRef.current = true;
+        callRef.current.setAutoAccept(false);
         void callRef.current.start(peer.peer_id, peer.peer_name, true, true);
       } else {
         // No match found immediately - wait for one via realtime
+        // This user will be the waiting party, so enable auto-accept
+        matchInitiatedRef.current = false;
+        callRef.current.setAutoAccept(true);
         setSearching(true);
       }
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to find match");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message ?? "Failed to find match");
       setSearching(false);
     }
   };
@@ -181,7 +185,10 @@ function Random() {
           filter: `user_id=eq.${uid}`,
         },
         (payload) => {
-          const newRow = payload.new as any;
+          const newRow = payload.new as {
+            status: string;
+            matched_with: string | null;
+          };
           if (newRow.status === "matched" && newRow.matched_with) {
             peerIdRef.current = newRow.matched_with;
             // Get peer name
@@ -192,8 +199,9 @@ function Random() {
               .maybeSingle()
               .then(({ data: peer }) => {
                 if (peer) {
+                  // This user was waiting, so auto-accept is already enabled
                   void callRef.current.start(
-                    newRow.matched_with,
+                    newRow.matched_with!,
                     peer.display_name ?? "Stranger",
                     true,
                     true,
@@ -202,6 +210,7 @@ function Random() {
               });
           } else if (newRow.status === "cancelled" || newRow.status === "expired") {
             setSearching(false);
+            callRef.current.setAutoAccept(false);
           }
         },
       )
@@ -215,12 +224,14 @@ function Random() {
     setSearching(false);
     if (call.random && call.status !== "idle") call.hangup();
     // Leave queue
-    supabase.rpc("leave_random_queue").catch(() => {});
+    Promise.resolve(supabase.rpc("leave_random_queue"));
+    callRef.current.setAutoAccept(false);
+    matchInitiatedRef.current = false;
   };
 
   const next = () => {
     if (call.random && call.status !== "idle") call.hangup();
-    supabase.rpc("leave_random_queue").then(() => {
+    Promise.resolve(supabase.rpc("leave_random_queue")).then(() => {
       setTimeout(() => findMatch(), 500);
     });
   };
@@ -237,21 +248,24 @@ function Random() {
     if (!reportReason || !peerIdRef.current) return;
     try {
       // Report the peer
-      await supabase.from("reports").insert({
-        reporter_id: uid,
-        reported_id: peerIdRef.current,
-        reason: reportDetails || reportReason,
-        reason_category: reportReason,
-        auto_blocked: true,
-      });
+      await Promise.resolve(
+        supabase.from("reports").insert({
+          reporter_id: uid,
+          reported_id: peerIdRef.current,
+          reason: reportDetails || reportReason,
+          reason_category: reportReason,
+          auto_blocked: true,
+        }),
+      );
       // Also block/leave
       stop();
       toast.success("Reported and disconnected");
       setShowReport(false);
       setReportReason("");
       setReportDetails("");
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to report");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message ?? "Failed to report");
     }
   };
 
@@ -259,9 +273,11 @@ function Random() {
   useEffect(() => {
     if (searching) {
       setSearching(false);
-      supabase.rpc("leave_random_queue").catch(() => {});
+      Promise.resolve(supabase.rpc("leave_random_queue"));
     }
     setConsentGiven(false);
+    callRef.current.setAutoAccept(false);
+    matchInitiatedRef.current = false;
   }, [selectedCountry]);
 
   return (
@@ -415,10 +431,6 @@ function Random() {
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" className="mt-1 h-4 w-4" required />
               <span>I understand I can be reported and banned for violations</span>
-            </label>
-            <label className="flex items-start gap-2 text-sm">
-              <input type="checkbox" className="mt-1 h-4 w-4" required />
-              <span>I consent to my IP being relayed through TURN servers for privacy</span>
             </label>
           </div>
           <div className="flex gap-2 border-t pt-4">

@@ -208,17 +208,15 @@ function ProfilePage() {
       } catch {
         toast.error("Blurred preview could not be created; the original stays private.");
       }
-      const { error: e2 } = await supabase
-        .from("photos")
-        .insert({
-          preview_path,
-          user_id: me.user.id,
-          path,
-          position: pos++,
-          album_id: uploadAlbum || null,
-          is_private: !!uploadAlbum,
-          view_timer: uploadTimer,
-        });
+      const { error: e2 } = await supabase.from("photos").insert({
+        preview_path,
+        user_id: me.user.id,
+        path,
+        position: pos++,
+        album_id: uploadAlbum || null,
+        is_private: !!uploadAlbum,
+        view_timer: uploadTimer,
+      });
       if (e2) {
         toast.error(e2.message);
         await supabase.storage.from("photos").remove([path]);

@@ -39,9 +39,9 @@ function Messages() {
 
       const [{ data: profiles }, { data: messages }, { data: photos }] = await Promise.all([
         supabase
-          .from("profiles")
+          .from("public_profiles")
           .select(
-            "id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at",
+            "id,username,display_name,gender,orientation,age,city,country,bio,verified,last_seen_at",
           )
           .in("id", otherIds),
         supabase

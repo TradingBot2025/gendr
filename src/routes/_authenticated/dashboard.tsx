@@ -44,11 +44,10 @@ function Dashboard() {
       const [{ data: conns }, { data: people }, { data: photos }] = await Promise.all([
         supabase.from("connections").select("*"),
         supabase
-          .from("profiles")
+          .from("public_profiles")
           .select(
-            "id,username,display_name,gender,orientation,birthdate,city,country,bio,verified,last_seen_at,created_at",
+            "id,username,display_name,gender,orientation,age,city,country,bio,verified,last_seen_at,created_at",
           )
-          .eq("banned", false)
           .neq("id", uid ?? "")
           .not("gender", "is", null)
           .order("created_at", { ascending: false })
@@ -63,7 +62,7 @@ function Dashboard() {
       const matches = c.filter((x) => x.status === "accepted");
       const ids = matches.map((m) => (m.requester === uid ? m.addressee : m.requester));
       const { data: mp } = ids.length
-        ? await supabase.from("profiles").select("id,display_name").in("id", ids)
+        ? await supabase.from("public_profiles").select("id,display_name").in("id", ids)
         : { data: [] };
       return {
         matches: matches.map((m) => {
