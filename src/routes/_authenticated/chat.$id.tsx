@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useMe, useSigned, useMyAlbumsWithPhotos } from "@/lib/data";
+import { useMe, useSigned, useMyAlbumsWithPhotos, type Message } from "@/lib/data";
 import { useCall } from "@/lib/calls";
 import {
   playNotificationSound,
@@ -106,6 +106,40 @@ const REPORT_REASONS = [
 
 const DISAPPEAR_OPTIONS = [{ value: 86400, label: "24 hours" }];
 
+// Renders a timed photo (10s/15s) with a live countdown. Once the countdown
+// reaches zero the image is replaced by a "Photo expired" placeholder and is
+// never shown again for the lifetime of this component.
+function TimedImageView({ url, expiresAtMs }: { url: string; expiresAtMs: number }) {
+  const [remaining, setRemaining] = useState(() =>
+    Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000)),
+  );
+
+  useEffect(() => {
+    const tick = () => setRemaining(Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000)));
+    tick();
+    const t = setInterval(tick, 250);
+    return () => clearInterval(t);
+  }, [expiresAtMs]);
+
+  if (remaining <= 0) {
+    return (
+      <div className="flex h-40 w-52 flex-col items-center justify-center gap-1 rounded-xl bg-muted text-xs text-muted-foreground">
+        <EyeOff className="h-5 w-5" />
+        <span>Photo expired</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <img src={url} alt="timed photo" className="mb-1 max-h-64 rounded-xl" />
+      <div className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-xs font-semibold text-white">
+        {remaining}s
+      </div>
+    </div>
+  );
+}
+
 function formatDisappear(seconds: number | null | undefined): string | null {
   if (!seconds || seconds <= 0) return null;
   const preset = DISAPPEAR_OPTIONS.find((o) => o.value === seconds);
@@ -158,6 +192,18 @@ function Chat() {
   const [albumPhotos, setAlbumPhotos] = useState<
     { id: string; path: string; album_id: string | null }[]
   >([]);
+  // Pending attachment (file or album photo) awaiting view-mode selection
+  const [pendingAttachment, setPendingAttachment] = useState<{
+    file?: File;
+    albumPath?: string;
+    albumPhotoId?: string;
+  } | null>(null);
+  const [showViewModeDialog, setShowViewModeDialog] = useState(false);
+  const [viewMode, setViewMode] = useState<"normal" | "once" | "10s" | "15s">("normal");
+  // Message IDs of special (view-once / timed) photos the recipient has opened
+  // in this session. Used to swap the blurred "Tap to view" placeholder for the
+  // actual image immediately, without waiting for the view-count refetch.
+  const [openedSpecial, setOpenedSpecial] = useState<Set<string>>(new Set());
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
@@ -268,39 +314,9 @@ function Chat() {
     return () => stopRingingSound();
   }, [call.status, audioEnabled]);
 
-  // Auto-increment view count for limited-view images when they come into view (for recipient)
-  useEffect(() => {
-    if (!msgs?.length || !uid) return;
-    const currentNow = Date.now();
-    msgs.forEach((m) => {
-      const mine = m.sender === uid;
-      const isExpired = m.expires_at && new Date(m.expires_at).getTime() < currentNow;
-      const isViewLimited =
-        m.max_views !== null &&
-        m.max_views !== undefined &&
-        m.view_count !== undefined &&
-        m.view_count >= m.max_views;
-      const isImage = m.attachment_type?.startsWith("image/");
-
-      if (
-        !mine &&
-        isImage &&
-        m.max_views &&
-        m.max_views > 0 &&
-        m.view_count !== undefined &&
-        m.view_count < m.max_views &&
-        !isExpired &&
-        !isViewLimited
-      ) {
-        if (!viewedMsgRef.current.has(m.id)) {
-          viewedMsgRef.current.add(m.id);
-          supabase.rpc("increment_message_view", { message_id: m.id }).then(() => {
-            qc.invalidateQueries({ queryKey: ["messages", id] });
-          });
-        }
-      }
-    });
-  }, [msgs, uid]);
+  // View count for limited-view / timed photos is incremented only when the
+  // recipient explicitly taps "Tap to view" (see handleOpenSpecial below),
+  // not merely by scrolling into view.
 
   if (info === null)
     return (
@@ -342,16 +358,19 @@ function Chat() {
     attachment_type?: string;
     attachment_name?: string;
     max_views?: number | null;
+    _expiresAt?: string;
   }) => {
-    // All messages follow one rule: disappear after 24 hours.
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    // All messages follow one rule: disappear after 24 hours, unless an override is provided
+    // (for timed photos: 10s or 15s after sending).
+    const expiresAt = fields._expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const { _expiresAt, ...rest } = fields;
     const { error } = await supabase.from("messages").insert({
       connection_id: id,
       sender: uid,
       expires_at: expiresAt,
       max_views: fields.max_views ?? null,
       view_count: 0,
-      ...fields,
+      ...rest,
     });
     if (error) toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["messages", id] });
@@ -405,55 +424,89 @@ function Chat() {
       toast.error("Files must be under 25MB");
       return;
     }
-    setSending(true);
-    const path = `${id}/${crypto.randomUUID()}-${f.name.replace(/[^\w.-]/g, "_")}`;
-    const { error } = await supabase.storage
-      .from("attachments")
-      .upload(path, f, { contentType: f.type });
-    if (error) toast.error(error.message);
-    else
-      await sendMsg({
-        attachment_path: path,
-        attachment_type: f.type || "application/octet-stream",
-        attachment_name: f.name,
-        max_views: maxViews,
-      });
-    setSending(false);
-    if (fileRef.current) fileRef.current.value = "";
+    setPendingAttachment({ file: f });
+    setViewMode("normal");
+    setShowViewModeDialog(true);
     setShowAttachMenu(false);
+    if (fileRef.current) fileRef.current.value = "";
   };
 
   const sendAlbumPhoto = async (photoPath: string, photoId: string) => {
-    setSending(true);
-    // Copy photo to attachments bucket for chat using signed URL
-    const path = `${id}/${crypto.randomUUID()}-${photoId}.jpg`;
-    const { data: signedUrlData, error: signError } = await supabase.storage
-      .from("photos")
-      .createSignedUrl(photoPath, 60);
-    if (signError || !signedUrlData?.signedUrl) {
-      toast.error("Failed to get photo URL");
-      setSending(false);
-      return;
-    }
-    const resp = await fetch(signedUrlData.signedUrl);
-    const blob = await resp.blob();
-    const { error } = await supabase.storage
-      .from("attachments")
-      .upload(path, blob, { contentType: "image/jpeg" });
-    if (error) {
-      toast.error(error.message);
-      setSending(false);
-      return;
-    }
-    await sendMsg({
-      attachment_path: path,
-      attachment_type: "image/jpeg",
-      attachment_name: `photo-${photoId}.jpg`,
-      max_views: maxViews,
-    });
-    setSending(false);
+    setPendingAttachment({ albumPath: photoPath, albumPhotoId: photoId });
+    setViewMode("normal");
+    setShowViewModeDialog(true);
     setShowAlbumPicker(false);
-    setShowAttachMenu(false);
+  };
+
+  const confirmSendAttachment = async () => {
+    if (!pendingAttachment) return;
+    setSending(true);
+    setShowViewModeDialog(false);
+
+    // Determine max_views and expires_at based on view mode
+    let maxViewsForSend: number | null = null;
+    let expiresAtOverride: string | null = null;
+    if (viewMode === "once") maxViewsForSend = 1;
+    else if (viewMode === "10s") {
+      maxViewsForSend = 1;
+      expiresAtOverride = new Date(Date.now() + 10 * 1000).toISOString();
+    } else if (viewMode === "15s") {
+      maxViewsForSend = 1;
+      expiresAtOverride = new Date(Date.now() + 15 * 1000).toISOString();
+    } else {
+      // Normal: apply the chosen view limit (unlimited = null, or 1/2/3)
+      maxViewsForSend = maxViews;
+    }
+
+    if (pendingAttachment.file) {
+      const f = pendingAttachment.file;
+      const path = `${id}/${crypto.randomUUID()}-${f.name.replace(/[^\w.-]/g, "_")}`;
+      const { error } = await supabase.storage
+        .from("attachments")
+        .upload(path, f, { contentType: f.type });
+      if (error) toast.error(error.message);
+      else
+        await sendMsg({
+          attachment_path: path,
+          attachment_type: f.type || "application/octet-stream",
+          attachment_name: f.name,
+          max_views: maxViewsForSend,
+          ...(expiresAtOverride ? { _expiresAt: expiresAtOverride } : {}),
+        });
+    } else if (pendingAttachment.albumPath && pendingAttachment.albumPhotoId) {
+      const photoPath = pendingAttachment.albumPath;
+      const photoId = pendingAttachment.albumPhotoId;
+      const path = `${id}/${crypto.randomUUID()}-${photoId}.jpg`;
+      const { data: signedUrlData, error: signError } = await supabase.storage
+        .from("photos")
+        .createSignedUrl(photoPath, 60);
+      if (signError || !signedUrlData?.signedUrl) {
+        toast.error("Failed to get photo URL");
+        setSending(false);
+        return;
+      }
+      const resp = await fetch(signedUrlData.signedUrl);
+      const blob = await resp.blob();
+      const { error } = await supabase.storage
+        .from("attachments")
+        .upload(path, blob, { contentType: "image/jpeg" });
+      if (error) {
+        toast.error(error.message);
+        setSending(false);
+        return;
+      }
+      await sendMsg({
+        attachment_path: path,
+        attachment_type: "image/jpeg",
+        attachment_name: `photo-${photoId}.jpg`,
+        max_views: maxViewsForSend,
+        ...(expiresAtOverride ? { _expiresAt: expiresAtOverride } : {}),
+      });
+    }
+    setSending(false);
+    setPendingAttachment(null);
+    setViewMode("normal");
+    setMaxViews(null);
   };
 
   const incrementView = async (messageId: string) => {
@@ -462,6 +515,43 @@ function Chat() {
     await supabase.rpc("increment_message_view", { message_id: messageId });
     qc.invalidateQueries({ queryKey: ["messages", id] });
   };
+
+  // Recipient taps a view-once / timed / view-limited photo.
+  const handleOpenSpecial = (m: Message) => {
+    if (!m.attachment_path) return;
+    // Count this view (once per session per message).
+    if (!mine(m)) void incrementView(m.id);
+    // Reveal immediately.
+    setOpenedSpecial((prev) => {
+      const next = new Set(prev);
+      next.add(m.id);
+      return next;
+    });
+    // Non-timed special photos also open in the full-screen viewer.
+    const timed =
+      m.expires_at &&
+      new Date(m.expires_at).getTime() - new Date(m.created_at).getTime() < 60 * 1000;
+    if (!timed) {
+      const imageMsgs = (msgs ?? []).filter(
+        (msg) =>
+          msg.attachment_type?.startsWith("image/") &&
+          msg.attachment_path &&
+          aurls[msg.attachment_path],
+      );
+      setPhotoViewerPhotos(
+        imageMsgs.map((msg) => ({
+          id: msg.id,
+          path: msg.attachment_path,
+          attachment_type: msg.attachment_type,
+        })),
+      );
+      const idx = imageMsgs.findIndex((msg) => msg.id === m.id);
+      setPhotoViewerIndex(idx >= 0 ? idx : 0);
+      setPhotoViewerOpen(true);
+    }
+  };
+
+  const mine = (m: Message) => m.sender === uid;
 
   const openExpired = () => setExpNotice(true);
 
@@ -618,10 +708,11 @@ function Chat() {
         )}
         {msgs?.map((m) => {
           const mine = m.sender === uid;
-          const isExpired = m.expires_at && new Date(m.expires_at).getTime() < now;
-          const isShortTimer =
+          const isExpired = !!(m.expires_at && new Date(m.expires_at).getTime() < now);
+          const isShortTimer = !!(
             m.expires_at &&
-            new Date(m.expires_at).getTime() - new Date(m.created_at).getTime() < 60 * 1000;
+            new Date(m.expires_at).getTime() - new Date(m.created_at).getTime() < 60 * 1000
+          );
           const isExpiredAndHidden = isExpired && isShortTimer;
           const isViewLimited =
             m.max_views !== null &&
@@ -630,8 +721,32 @@ function Chat() {
             m.view_count >= m.max_views;
           const isUnsent = m.unsent === true;
           const url = m.attachment_path ? aurls[m.attachment_path] : undefined;
-          const isImage = m.attachment_type?.startsWith("image/");
-          const isVideo = m.attachment_type?.startsWith("video/");
+          const isImage = !!m.attachment_type?.startsWith("image/");
+          const isVideo = !!m.attachment_type?.startsWith("video/");
+
+          // Special = view-once / timed / view-limited photo
+          const isSpecial =
+            isImage && m.max_views !== null && m.max_views !== undefined && m.max_views > 0;
+          const isTimed = !!(isShortTimer && m.expires_at);
+          const spanSec = m.expires_at
+            ? Math.round(
+                (new Date(m.expires_at).getTime() - new Date(m.created_at).getTime()) / 1000,
+              )
+            : 0;
+          const opened = openedSpecial.has(m.id);
+          const viewed = (m.view_count ?? 0) > 0;
+          const exhausted = isViewLimited;
+          const timedExpired = isTimed && isExpired;
+          const specialHidden = isSpecial && (exhausted || timedExpired);
+          const showTapToView = isSpecial && !mine && !viewed && !opened && !specialHidden;
+
+          // Badge text shown on the bubble (e.g. "1x", "2x", "10s")
+          let specialBadge: string | null = null;
+          if (isSpecial) {
+            if (isTimed) specialBadge = `${spanSec || 10}s`;
+            else if (m.max_views === 1) specialBadge = "1x";
+            else specialBadge = `${m.max_views}x`;
+          }
 
           // Don't render short-timer expired messages at all
           if (isExpiredAndHidden) return null;
@@ -639,7 +754,7 @@ function Chat() {
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div
-                className={`group max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${(isExpired && !isShortTimer) || isViewLimited ? "opacity-40" : ""} ${isUnsent ? "bg-muted" : ""}`}
+                className={`group max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${isExpired && !isShortTimer ? "opacity-60" : ""} ${isUnsent ? "bg-muted" : ""}`}
               >
                 {isUnsent ? (
                   <div className="flex items-center gap-2 text-xs opacity-60">
@@ -651,36 +766,69 @@ function Chat() {
                     {m.attachment_path && (
                       <>
                         {isImage ? (
-                          url ? (
-                            <div
-                              onClick={() => {
-                                if (!mine) incrementView(m.id);
-                                // Collect all images in chat for PhotoViewer navigation
-                                const imageMsgs = (msgs ?? []).filter(
-                                  (msg) =>
-                                    msg.attachment_type?.startsWith("image/") &&
-                                    msg.attachment_path &&
-                                    aurls[msg.attachment_path],
-                                );
-                                setPhotoViewerPhotos(
-                                  imageMsgs.map((msg) => ({
-                                    id: msg.id,
-                                    path: msg.attachment_path,
-                                    attachment_type: msg.attachment_type,
-                                  })),
-                                );
-                                const idx = imageMsgs.findIndex((msg) => msg.id === m.id);
-                                setPhotoViewerIndex(idx >= 0 ? idx : 0);
-                                setPhotoViewerOpen(true);
-                              }}
-                              className="cursor-pointer"
-                            >
-                              <img
-                                src={url}
-                                alt={m.attachment_name ?? "image"}
-                                className="mb-1 max-h-64 rounded-xl"
-                              />
+                          specialHidden ? (
+                            <div className="flex h-40 w-52 flex-col items-center justify-center gap-1 rounded-xl bg-muted text-xs text-muted-foreground">
+                              <EyeOff className="h-5 w-5" />
+                              <span>Photo expired</span>
                             </div>
+                          ) : showTapToView ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSpecial(m)}
+                              className="relative h-40 w-52 overflow-hidden rounded-xl bg-muted"
+                              aria-label="Tap to view photo"
+                            >
+                              {url && (
+                                <img
+                                  src={url}
+                                  alt="hidden"
+                                  className="h-full w-full scale-110 object-cover blur-xl"
+                                />
+                              )}
+                              <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/30 text-white">
+                                <Eye className="h-6 w-6" />
+                                <span className="text-xs font-medium">Tap to view</span>
+                              </span>
+                            </button>
+                          ) : url ? (
+                            isTimed && !mine && m.expires_at ? (
+                              <TimedImageView
+                                url={url}
+                                expiresAtMs={new Date(m.expires_at).getTime()}
+                              />
+                            ) : (
+                              <div
+                                onClick={() => {
+                                  if (isSpecial && !mine && !viewed) {
+                                    handleOpenSpecial(m);
+                                    return;
+                                  }
+                                  const imageMsgs = (msgs ?? []).filter(
+                                    (msg) =>
+                                      msg.attachment_type?.startsWith("image/") &&
+                                      msg.attachment_path &&
+                                      aurls[msg.attachment_path],
+                                  );
+                                  setPhotoViewerPhotos(
+                                    imageMsgs.map((msg) => ({
+                                      id: msg.id,
+                                      path: msg.attachment_path,
+                                      attachment_type: msg.attachment_type,
+                                    })),
+                                  );
+                                  const idx = imageMsgs.findIndex((msg) => msg.id === m.id);
+                                  setPhotoViewerIndex(idx >= 0 ? idx : 0);
+                                  setPhotoViewerOpen(true);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <img
+                                  src={url}
+                                  alt={m.attachment_name ?? "image"}
+                                  className="mb-1 max-h-64 rounded-xl"
+                                />
+                              </div>
+                            )
                           ) : (
                             <div className="h-32 w-48 animate-pulse rounded-xl bg-muted" />
                           )
@@ -697,11 +845,18 @@ function Chat() {
                             {m.attachment_name}
                           </a>
                         )}
-                        {m.max_views !== null && m.max_views !== undefined && (
-                          <div className="text-[10px] text-center opacity-70 mt-1">
-                            {m.max_views === 1
-                              ? "👁 One-time view"
-                              : `👁 ${m.view_count ?? 0}/${m.max_views} views`}
+                        {specialBadge && (
+                          <div className="mt-1 flex items-center justify-between gap-2 text-[10px] opacity-80">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-black/10 px-1.5 py-0.5 dark:bg-white/10">
+                              <Eye className="h-3 w-3" />
+                              {specialBadge}
+                            </span>
+                            {mine && <span>{viewed ? "Opened" : "Not opened"}</span>}
+                            {!mine && !isTimed && m.max_views !== 1 && (
+                              <span>
+                                {m.view_count ?? 0}/{m.max_views} views
+                              </span>
+                            )}
                           </div>
                         )}
                       </>
@@ -799,6 +954,112 @@ function Chat() {
         </DialogContent>
       </Dialog>
 
+      {/* View Mode Dialog — shown after selecting a file or album photo */}
+      <Dialog open={showViewModeDialog} onOpenChange={setShowViewModeDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>How should it be seen?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 p-4">
+            <Button
+              variant={viewMode === "normal" ? "default" : "outline"}
+              className="w-full justify-start"
+              onClick={() => setViewMode("normal")}
+            >
+              Normal (no limit)
+            </Button>
+            <Button
+              variant={viewMode === "once" ? "default" : "outline"}
+              className="w-full justify-start"
+              onClick={() => setViewMode("once")}
+            >
+              <Eye className="h-4 w-4 mr-2" /> View once
+            </Button>
+            <Button
+              variant={viewMode === "10s" ? "default" : "outline"}
+              className="w-full justify-start"
+              onClick={() => setViewMode("10s")}
+            >
+              <Clock className="h-4 w-4 mr-2" /> View for 10 seconds
+            </Button>
+            <Button
+              variant={viewMode === "15s" ? "default" : "outline"}
+              className="w-full justify-start"
+              onClick={() => setViewMode("15s")}
+            >
+              <Clock className="h-4 w-4 mr-2" /> View for 15 seconds
+            </Button>
+            {viewMode === "normal" && (
+              <div className="space-y-2 rounded-xl border bg-muted/40 p-3">
+                <Label className="text-xs">View limit</Label>
+                <RadioGroup
+                  value={maxViews === null ? "unlimited" : maxViews.toString()}
+                  onValueChange={(v) => setMaxViews(v === "unlimited" ? null : parseInt(v))}
+                >
+                  <div className="flex flex-wrap gap-2">
+                    <RadioGroupItem
+                      value="unlimited"
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border bg-background text-sm"
+                    >
+                      <span>Unlimited</span>
+                    </RadioGroupItem>
+                    <RadioGroupItem
+                      value="1"
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border bg-background text-sm"
+                    >
+                      <Eye className="h-3 w-3" />
+                      <span>1 view</span>
+                    </RadioGroupItem>
+                    <RadioGroupItem
+                      value="2"
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border bg-background text-sm"
+                    >
+                      <span>2 views</span>
+                    </RadioGroupItem>
+                    <RadioGroupItem
+                      value="3"
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border bg-background text-sm"
+                    >
+                      <span>3 views</span>
+                    </RadioGroupItem>
+                  </div>
+                </RadioGroup>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {viewMode === "normal"
+                ? "This photo stays visible until it expires after 24 hours."
+                : viewMode === "once"
+                  ? "The recipient can view this photo once, then it expires."
+                  : viewMode === "10s"
+                    ? "The recipient has 10 seconds to view this photo."
+                    : "The recipient has 15 seconds to view this photo."}
+            </p>
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setShowViewModeDialog(false);
+                  setPendingAttachment(null);
+                }}
+                disabled={sending}
+              >
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={confirmSendAttachment} disabled={sending}>
+                {sending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                Send
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Album Picker */}
       <Dialog open={showAlbumPicker} onOpenChange={setShowAlbumPicker}>
         <DialogContent className="max-w-2xl max-h-[80vh]">
@@ -806,44 +1067,6 @@ function Chat() {
             <DialogTitle>Choose from your albums</DialogTitle>
           </DialogHeader>
           <div className="p-4">
-            <div className="mb-4 space-y-2">
-              <Label>View limit for this photo</Label>
-              <RadioGroup
-                value={maxViews === null ? "unlimited" : maxViews.toString()}
-                onValueChange={(v) => setMaxViews(v === "unlimited" ? null : parseInt(v))}
-              >
-                <div className="flex flex-wrap gap-2">
-                  <RadioGroupItem
-                    value="unlimited"
-                    className="flex items-center gap-1 px-3 py-2 rounded-lg border bg-background"
-                  >
-                    <span>Unlimited</span>
-                  </RadioGroupItem>
-                  <RadioGroupItem
-                    value="1"
-                    className="flex items-center gap-1 px-3 py-2 rounded-lg border bg-background"
-                  >
-                    <Eye className="h-3 w-3" />
-                    <span>1 view</span>
-                  </RadioGroupItem>
-                  <RadioGroupItem
-                    value="2"
-                    className="flex items-center gap-1 px-3 py-2 rounded-lg border bg-background"
-                  >
-                    <span>2 views</span>
-                  </RadioGroupItem>
-                  <RadioGroupItem
-                    value="3"
-                    className="flex items-center gap-1 px-3 py-2 rounded-lg border bg-background"
-                  >
-                    <span>3 views</span>
-                  </RadioGroupItem>
-                </div>
-              </RadioGroup>
-              <p className="text-xs text-muted-foreground">
-                One-time view photos disappear after the recipient opens them once.
-              </p>
-            </div>
             <ScrollArea className="max-h-[50vh]">
               <div className="space-y-4">
                 {myAlbums?.map(
