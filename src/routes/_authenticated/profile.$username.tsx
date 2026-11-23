@@ -21,7 +21,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { ageOf, useMe, useSigned, logProfileView, reportProfile } from "@/lib/data";
+import { useMe, useSigned, logProfileView, reportProfile } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -93,11 +93,10 @@ const REPORT_REASONS = [
   { value: "other", label: "Other", description: "Something not listed here" },
 ];
 
-const PROFILE_COLUMNS =
-  "id,username,display_name,gender,orientation,birthdate,bio,city,country,verified,is_online,last_seen_at,banned,looking_for,created_at";
-// Extended columns (height, weight, education, children, marital_status) require
-// migration 0006. They are NOT selected here so profile viewing works even before
-// the migration is applied. Once the columns exist, add them to PROFILE_COLUMNS.
+// Public profile columns from the public_profiles view (readable by all authenticated users).
+// Uses age directly (not birthdate) since the view exposes age.
+const PUBLIC_PROFILE_COLUMNS =
+  "id,username,display_name,gender,orientation,age,city,country,bio,looking_for,verified,last_seen_at,created_at,is_online";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -140,25 +139,25 @@ function ProfileView() {
     queryKey: ["profile-view", username],
     enabled: !!uid,
     queryFn: async () => {
-      // The profiles table is readable by every authenticated user (RLS: non-banned or self),
-      // so we can fetch the profile directly. The route param may be a username or, as a
-      // fallback for legacy profiles without a username, the user's id (UUID).
+      // Read other members from the public_profiles view (readable by all authenticated users).
+      // The route param may be a username or, as a fallback for legacy profiles without a
+      // username, the user's id (UUID).
       let { data: p } = await supabase
-        .from("profiles")
-        .select(PROFILE_COLUMNS)
+        .from("public_profiles")
+        .select(PUBLIC_PROFILE_COLUMNS)
         .eq("username", username)
         .maybeSingle();
 
       if (!p && UUID_RE.test(username)) {
         const { data: pById } = await supabase
-          .from("profiles")
-          .select(PROFILE_COLUMNS)
+          .from("public_profiles")
+          .select(PUBLIC_PROFILE_COLUMNS)
           .eq("id", username)
           .maybeSingle();
         p = pById;
       }
 
-      if (!p || p.banned) return null;
+      if (!p) return null;
 
       // Determine the relationship between me and this profile.
       const { data: conns } = await supabase
@@ -462,10 +461,8 @@ function ProfileView() {
                   <div className="min-w-0">
                     <h1 className="flex items-center gap-2 text-2xl font-bold">
                       {p.display_name}
-                      {ageOf(p.birthdate) !== null && (
-                        <span className="text-lg font-normal text-muted-foreground">
-                          , {ageOf(p.birthdate)}
-                        </span>
+                      {p.age !== null && p.age !== undefined && (
+                        <span className="text-lg font-normal text-muted-foreground">, {p.age}</span>
                       )}
                       {p.verified && <BadgeCheck className="h-5 w-5 text-primary" />}
                     </h1>
@@ -598,10 +595,8 @@ function ProfileView() {
                 <div>
                   <h1 className="flex items-center gap-2 text-3xl font-bold">
                     {p.display_name}
-                    {ageOf(p.birthdate) !== null && (
-                      <span className="text-2xl font-normal text-muted-foreground">
-                        , {ageOf(p.birthdate)}
-                      </span>
+                    {p.age !== null && p.age !== undefined && (
+                      <span className="text-2xl font-normal text-muted-foreground">, {p.age}</span>
                     )}
                     {p.verified && <BadgeCheck className="h-6 w-6 text-primary" />}
                   </h1>
