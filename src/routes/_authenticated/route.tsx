@@ -7,13 +7,29 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Compass, Heart, LogOut, Settings, Shuffle, MessageCircle, UserCog } from "lucide-react";
+import {
+  Compass,
+  Heart,
+  LogOut,
+  Settings,
+  Shuffle,
+  MessageCircle,
+  UserCog,
+  Menu,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useMe } from "@/lib/data";
+import { useMe, useSigned } from "@/lib/data";
 import { useNotifications } from "@/lib/notifications";
 import { CallProvider } from "@/lib/calls";
 import { CallOverlay } from "@/components/app/CallOverlay";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -63,6 +79,9 @@ function ShellInner({ signOut }: { signOut: () => void }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { unreadCount: unread } = useNotifications();
   const { data: me } = useMe();
+  const myPhotoPath = me?.photos?.[0]?.path;
+  const avatarUrls = useSigned("photos", [myPhotoPath]);
+  const avatarUrl = myPhotoPath ? avatarUrls[myPhotoPath] : undefined;
 
   // Desktop sidebar nav (full set)
   const desktopNav = [
@@ -84,42 +103,141 @@ function ShellInner({ signOut }: { signOut: () => void }) {
   ] as const;
 
   const inChat = path.startsWith("/chat/");
+  const inProfile = path.startsWith("/profile/");
+  const inDiscover = path.startsWith("/discover");
+
+  // Page title for header
+  const pageTitle = inDiscover
+    ? "Discover"
+    : path.startsWith("/connections")
+      ? "Matches"
+      : path.startsWith("/messages")
+        ? "Messages"
+        : path.startsWith("/random")
+          ? "Random"
+          : path.startsWith("/account")
+            ? "Account"
+            : path.startsWith("/admin")
+              ? "Admin"
+              : path.startsWith("/profile")
+                ? "Profile"
+                : path.startsWith("/chat")
+                  ? "Chat"
+                  : path.startsWith("/albums")
+                    ? "Albums"
+                    : "Gender";
 
   return (
-    <div className="flex min-h-screen flex-col bg-background md:flex-row">
-      {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r bg-sidebar p-5 md:flex">
-        <Link to="/discover" className="mb-8 font-display text-2xl font-bold text-primary">
-          Gender
-        </Link>
-        <nav className="flex flex-1 flex-col gap-1">
-          {desktopNav.map((n) => (
-            <Link
-              key={n.to}
-              to={n.to}
-              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent"
-              activeProps={{ className: "bg-sidebar-accent text-foreground" }}
-            >
-              <n.icon className="h-4 w-4" />
-              {n.label}
-              {n.to === "/messages" && unread > 0 && (
-                <span className="ml-auto inline-flex items-center justify-center min-h-5 w-5 rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">
-                  {unread > 99 ? "99+" : unread}
-                </span>
-              )}
+    <div className="flex min-h-screen flex-col bg-background">
+      {/* Top header — shared on every authenticated page (except chat which has its own) */}
+      {!inChat && (
+        <header
+          className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80"
+          style={{ paddingTop: "env(safe-area-inset-top)" }}
+        >
+          <div className="flex h-14 items-center justify-between px-4">
+            <Link to="/discover" className="flex items-center gap-2">
+              <span className="font-display text-xl font-bold text-primary">Gender</span>
+              <span className="hidden text-sm text-muted-foreground sm:inline">/ {pageTitle}</span>
             </Link>
-          ))}
-        </nav>
-        <Button variant="ghost" className="justify-start" onClick={signOut}>
-          <LogOut className="mr-2 h-4 w-4" />
-          Sign out
-        </Button>
-      </aside>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 rounded-full"
+                    aria-label="Account menu"
+                  >
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem asChild>
+                    <Link to="/profile">
+                      <span className="flex items-center gap-2">
+                        {avatarUrl ? (
+                          <img
+                            src={avatarUrl}
+                            alt="Me"
+                            className="h-6 w-6 rounded-full object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                            {me?.profile?.display_name?.[0] ?? "?"}
+                          </span>
+                        )}
+                        My profile
+                      </span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/account">
+                      <Settings className="mr-2 h-4 w-4" /> Account & settings
+                    </Link>
+                  </DropdownMenuItem>
+                  {me?.isAdmin && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link to="/admin">
+                          <UserCog className="mr-2 h-4 w-4" /> Admin
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={signOut}>
+                    <LogOut className="mr-2 h-4 w-4" /> Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Link
+                to="/profile"
+                className="h-9 w-9 overflow-hidden rounded-full border bg-muted"
+                aria-label="My profile"
+              >
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Me" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full items-center justify-center font-semibold">
+                    {me?.profile?.display_name?.[0] ?? "?"}
+                  </span>
+                )}
+              </Link>
+            </div>
+          </div>
+        </header>
+      )}
 
-      {/* Main content */}
-      <main className={`min-w-0 flex-1 ${inChat ? "" : "pb-20 md:pb-0"}`}>
-        <Outlet />
-      </main>
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {/* Desktop sidebar */}
+        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 flex-col border-r bg-sidebar p-5 md:flex">
+          <nav className="flex flex-1 flex-col gap-1">
+            {desktopNav.map((n) => (
+              <Link
+                key={n.to}
+                to={n.to}
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent"
+                activeProps={{ className: "bg-sidebar-accent text-foreground" }}
+              >
+                <n.icon className="h-4 w-4" />
+                {n.label}
+                {n.to === "/messages" && unread > 0 && (
+                  <span className="ml-auto inline-flex items-center justify-center min-h-5 w-5 rounded-full bg-destructive px-1.5 text-xs text-destructive-foreground">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
+              </Link>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Main content */}
+        <main className={`min-w-0 flex-1 ${inChat ? "" : "pb-20 md:pb-0"}`}>
+          <Outlet />
+        </main>
+      </div>
 
       {/* Mobile bottom nav */}
       {!inChat && (
