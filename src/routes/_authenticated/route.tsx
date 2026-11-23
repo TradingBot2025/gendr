@@ -1,4 +1,11 @@
-import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  redirect,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Compass, Heart, LogOut, Settings, Shuffle, MessageCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,7 +36,12 @@ function Shell() {
     navigate({ to: "/auth", replace: true });
   };
 
-  if (isLoading || !me) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
+  if (isLoading || !me)
+    return (
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+        Loading…
+      </div>
+    );
 
   if (me.profile?.banned)
     return (
@@ -77,7 +89,9 @@ function ShellInner({ signOut }: { signOut: () => void }) {
     <div className="flex min-h-screen flex-col bg-background md:flex-row">
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r bg-sidebar p-5 md:flex">
-        <Link to="/discover" className="mb-8 font-display text-2xl font-bold text-primary">Gender</Link>
+        <Link to="/discover" className="mb-8 font-display text-2xl font-bold text-primary">
+          Gender
+        </Link>
         <nav className="flex flex-1 flex-col gap-1">
           {desktopNav.map((n) => (
             <Link
@@ -96,7 +110,10 @@ function ShellInner({ signOut }: { signOut: () => void }) {
             </Link>
           ))}
         </nav>
-        <Button variant="ghost" className="justify-start" onClick={signOut}><LogOut className="mr-2 h-4 w-4" />Sign out</Button>
+        <Button variant="ghost" className="justify-start" onClick={signOut}>
+          <LogOut className="mr-2 h-4 w-4" />
+          Sign out
+        </Button>
       </aside>
 
       {/* Main content */}

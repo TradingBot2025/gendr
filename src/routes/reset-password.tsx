@@ -25,16 +25,31 @@ function Reset() {
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     const { error } = await supabase.auth.updateUser({ password: pw });
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     toast.success("Password updated");
     navigate({ to: "/discover" });
   };
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <form onSubmit={save} className="w-full max-w-sm space-y-4 rounded-3xl border bg-card p-8 shadow-soft">
+      <form
+        onSubmit={save}
+        className="w-full max-w-sm space-y-4 rounded-3xl border bg-card p-8 shadow-soft"
+      >
         <h1 className="text-2xl font-bold">New password</h1>
-        <Input type="password" minLength={6} required value={pw} onChange={(e) => setPw(e.target.value)} placeholder="New password" />
-        <Button type="submit" variant="hero" className="w-full">Save password</Button>
+        <Input
+          type="password"
+          minLength={6}
+          required
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          placeholder="New password"
+        />
+        <Button type="submit" variant="hero" className="w-full">
+          Save password
+        </Button>
       </form>
     </div>
   );

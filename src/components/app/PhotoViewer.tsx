@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, ChevronLeft, ChevronRight, Download, Share2, Trash2, Lock, Eye, EyeOff, Move } from "lucide-react";
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Share2,
+  Trash2,
+  Lock,
+  Eye,
+  EyeOff,
+  Move,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -9,7 +20,13 @@ import { Label } from "@/components/ui/label";
 interface PhotoViewerProps {
   isOpen: boolean;
   onClose: () => void;
-  photos: { id: string; path: string; album_id: string | null; is_private?: boolean; view_timer?: string }[];
+  photos: {
+    id: string;
+    path: string;
+    album_id: string | null;
+    is_private?: boolean;
+    view_timer?: string;
+  }[];
   initialIndex?: number;
   urls: Record<string, string>;
   currentUserId?: string;
@@ -82,16 +99,36 @@ export function PhotoViewer({
             </div>
             <div className="flex items-center gap-2">
               {isOwner && onMoveToAlbum && (
-                <Button variant="ghost" size="icon" className="bg-white/90" onClick={() => setShowMoveDialog(true)} title="Move to album">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="bg-white/90"
+                  onClick={() => setShowMoveDialog(true)}
+                  title="Move to album"
+                >
                   <Move className="h-4 w-4" />
                 </Button>
               )}
               {isOwner && onDeletePhoto && (
-                <Button variant="ghost" size="icon" className="bg-white/90 text-destructive" onClick={() => { if (confirm("Delete this photo?")) onDeletePhoto(photo.id); }} title="Delete">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="bg-white/90 text-destructive"
+                  onClick={() => {
+                    if (confirm("Delete this photo?")) onDeletePhoto(photo.id);
+                  }}
+                  title="Delete"
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               )}
-              <Button variant="ghost" size="icon" className="bg-white/90" onClick={onClose} title="Close">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="bg-white/90"
+                onClick={onClose}
+                title="Close"
+              >
                 <X className="h-5 w-5" />
               </Button>
             </div>
@@ -113,7 +150,9 @@ export function PhotoViewer({
               src={url || ""}
               alt=""
               className="w-full h-full object-contain"
-              onError={(e) => { e.currentTarget.style.display = "none"; }}
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
             />
             <Button
               variant="ghost"
@@ -133,7 +172,9 @@ export function PhotoViewer({
                 <Label className="text-xs text-white/70">View timer:</Label>
                 <select
                   value={photo.view_timer || "normal"}
-                  onChange={(e) => onSetTimer?.(photo.id, e.target.value as "normal" | "10s" | "15s")}
+                  onChange={(e) =>
+                    onSetTimer?.(photo.id, e.target.value as "normal" | "10s" | "15s")
+                  }
                   className="bg-white/10 border-white/20 text-white text-xs rounded px-2 py-1"
                 >
                   <option value="normal">Normal (no limit)</option>
@@ -142,7 +183,11 @@ export function PhotoViewer({
                 </select>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => url && window.open(url, "_blank")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => url && window.open(url, "_blank")}
+                >
                   <Download className="h-3 w-3 mr-1" /> Open full
                 </Button>
               </div>
@@ -156,19 +201,49 @@ export function PhotoViewer({
                 <h3 className="font-semibold mb-4">Move to album</h3>
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   <label className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent cursor-pointer">
-                    <input type="radio" name="moveAlbum" value="none" checked={moveAlbumId === "none" || moveAlbumId === null} onChange={() => setMoveAlbumId("none")} className="h-4 w-4" />
+                    <input
+                      type="radio"
+                      name="moveAlbum"
+                      value="none"
+                      checked={moveAlbumId === "none" || moveAlbumId === null}
+                      onChange={() => setMoveAlbumId("none")}
+                      className="h-4 w-4"
+                    />
                     <span>Remove from album (Main photos)</span>
                   </label>
                   {albums?.map((a) => (
-                    <label key={a.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent cursor-pointer">
-                      <input type="radio" name="moveAlbum" value={a.id} checked={moveAlbumId === a.id} onChange={() => setMoveAlbumId(a.id)} className="h-4 w-4" />
-                      <span>{a.name} ({a.is_private ? "Private" : "Public"})</span>
+                    <label
+                      key={a.id}
+                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name="moveAlbum"
+                        value={a.id}
+                        checked={moveAlbumId === a.id}
+                        onChange={() => setMoveAlbumId(a.id)}
+                        className="h-4 w-4"
+                      />
+                      <span>
+                        {a.name} ({a.is_private ? "Private" : "Public"})
+                      </span>
                     </label>
                   ))}
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <Button variant="outline" className="flex-1" onClick={() => { setShowMoveDialog(false); setMoveAlbumId(null); }}>Cancel</Button>
-                  <Button className="flex-1" onClick={handleMoveToAlbum}>Move</Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setShowMoveDialog(false);
+                      setMoveAlbumId(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button className="flex-1" onClick={handleMoveToAlbum}>
+                    Move
+                  </Button>
                 </div>
               </div>
             </div>

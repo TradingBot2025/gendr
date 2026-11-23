@@ -11,7 +11,10 @@ export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Sign in — Gender" },
-      { name: "description", content: "Sign in or create your free Gender dating account with Google or email." },
+      {
+        name: "description",
+        content: "Sign in or create your free Gender dating account with Google or email.",
+      },
       { property: "og:title", content: "Sign in — Gender" },
       { property: "og:description", content: "Create your free dating account." },
       { property: "og:type", content: "website" },
@@ -31,13 +34,19 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => { if (data.session) navigate({ to: "/dashboard" }); });
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => { if (s) navigate({ to: "/dashboard" }); });
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) navigate({ to: "/dashboard" });
+    });
+    const { data } = supabase.auth.onAuthStateChange((_e, s) => {
+      if (s) navigate({ to: "/dashboard" });
+    });
     return () => data.subscription.unsubscribe();
   }, [navigate]);
 
   const google = async () => {
-    const r = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin + "/auth" });
+    const r = await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin + "/auth",
+    });
     if (r.error) toast.error(r.error.message ?? "Google sign-in failed");
   };
 
@@ -46,14 +55,20 @@ function AuthPage() {
     setBusy(true);
     try {
       if (mode === "up") {
-        const { error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin + "/auth" } });
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: window.location.origin + "/auth" },
+        });
         if (error) throw error;
         toast.success("Check your email to confirm your account.");
       } else if (mode === "in") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + "/reset-password" });
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + "/reset-password",
+        });
         if (error) throw error;
         toast.success("Password reset link sent.");
       }
@@ -69,29 +84,75 @@ function AuthPage() {
       <div className="w-full max-w-sm rounded-3xl border bg-card p-8 shadow-soft">
         <h1 className="text-center text-3xl font-bold text-primary">Gender</h1>
         <p className="mb-6 mt-2 text-center text-sm text-muted-foreground">
-          {mode === "up" ? "Create your free account" : mode === "in" ? "Welcome back" : "Reset your password"}
+          {mode === "up"
+            ? "Create your free account"
+            : mode === "in"
+              ? "Welcome back"
+              : "Reset your password"}
         </p>
         {mode !== "forgot" && (
           <>
-            <Button type="button" variant="google" className="h-10 w-full rounded-full" onClick={google}>
-              <span aria-hidden="true" className="h-[18px] w-[18px]" dangerouslySetInnerHTML={{ __html: G }} />
+            <Button
+              type="button"
+              variant="google"
+              className="h-10 w-full rounded-full"
+              onClick={google}
+            >
+              <span
+                aria-hidden="true"
+                className="h-[18px] w-[18px]"
+                dangerouslySetInnerHTML={{ __html: G }}
+              />
               Continue with Google
             </Button>
-            <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground"><div className="h-px flex-1 bg-border" />or<div className="h-px flex-1 bg-border" /></div>
+            <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="h-px flex-1 bg-border" />
+              or
+              <div className="h-px flex-1 bg-border" />
+            </div>
           </>
         )}
         <form onSubmit={submit} className="space-y-4">
-          <div className="space-y-1.5"><Label htmlFor="email">Email</Label><Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
           {mode !== "forgot" && (
-            <div className="space-y-1.5"><Label htmlFor="pw">Password</Label><Input id="pw" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pw">Password</Label>
+              <Input
+                id="pw"
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
           )}
           <Button type="submit" variant="hero" className="w-full" disabled={busy}>
             {mode === "up" ? "Create account" : mode === "in" ? "Sign in" : "Send reset link"}
           </Button>
         </form>
         <div className="mt-5 flex flex-col items-center gap-1 text-sm">
-          {mode === "in" && <button className="text-muted-foreground hover:text-foreground" onClick={() => setMode("forgot")}>Forgot password?</button>}
-          <button className="font-medium text-primary" onClick={() => setMode(mode === "up" ? "in" : "up")}>
+          {mode === "in" && (
+            <button
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setMode("forgot")}
+            >
+              Forgot password?
+            </button>
+          )}
+          <button
+            className="font-medium text-primary"
+            onClick={() => setMode(mode === "up" ? "in" : "up")}
+          >
             {mode === "up" ? "Already have an account? Sign in" : "New here? Create an account"}
           </button>
         </div>

@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -15,7 +23,13 @@ type Signal = {
 };
 
 export type CallStatus = "idle" | "outgoing" | "incoming" | "active";
-type CallState = { status: CallStatus; peerId: string | null; peerName: string; video: boolean; random: boolean };
+type CallState = {
+  status: CallStatus;
+  peerId: string | null;
+  peerName: string;
+  video: boolean;
+  random: boolean;
+};
 
 type Ctx = CallState & {
   local: MediaStream | null;
@@ -38,10 +52,21 @@ export const useCall = () => {
 
 const IDLE: CallState = { status: "idle", peerId: null, peerName: "", video: false, random: false };
 
-export function CallProvider({ userId, myName, children }: { userId: string; myName: string; children: ReactNode }) {
+export function CallProvider({
+  userId,
+  myName,
+  children,
+}: {
+  userId: string;
+  myName: string;
+  children: ReactNode;
+}) {
   const [state, setStateRaw] = useState<CallState>(IDLE);
   const stateRef = useRef(state);
-  const setState = (s: CallState) => { stateRef.current = s; setStateRaw(s); };
+  const setState = (s: CallState) => {
+    stateRef.current = s;
+    setStateRaw(s);
+  };
   const [local, setLocal] = useState<MediaStream | null>(null);
   const [remote, setRemote] = useState<MediaStream | null>(null);
   const pc = useRef<RTCPeerConnection | null>(null);
@@ -49,20 +74,26 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
   const pendingOffer = useRef<Signal | null>(null);
   const iceQueue = useRef<RTCIceCandidateInit[]>([]);
   const autoAccept = useRef(false);
-  const turnCredsRef = useRef<{ username: string; credential: string; urls: string[] } | null>(null);
+  const turnCredsRef = useRef<{ username: string; credential: string; urls: string[] } | null>(
+    null,
+  );
 
   // Fetch TURN credentials on mount
   useEffect(() => {
     let alive = true;
-    getTurnCredentials().then(({ username, credential, urls }) => {
-      if (alive && username && credential) {
-        turnCredsRef.current = { username, credential, urls };
-      }
-    }).catch(() => {
-      // Fallback to STUN only
-      turnCredsRef.current = null;
-    });
-    return () => { alive = false; };
+    getTurnCredentials()
+      .then(({ username, credential, urls }) => {
+        if (alive && username && credential) {
+          turnCredsRef.current = { username, credential, urls };
+        }
+      })
+      .catch(() => {
+        // Fallback to STUN only
+        turnCredsRef.current = null;
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const getIceServers = useCallback((forceRelay = false) => {
@@ -88,8 +119,9 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
   const send = useCallback(async (to: string, s: Omit<Signal, "from" | "name">) => {
     try {
       await sendCallSignal({ data: { to, ...s } });
-    } catch (err: any) {
-      console.error("Failed to send call signal:", err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Failed to send call signal:", message);
       // Don't throw - let the call fail naturally
     }
   }, []);
@@ -106,19 +138,29 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
     setState(IDLE);
   }, []);
 
-  const makePc = useCallback((peer: string, forceRelay = false) => {
-    const config = getIceServers(forceRelay);
-    const conn = new RTCPeerConnection(config);
-    conn.onicecandidate = (e) => { if (e.candidate) void send(peer, { type: "ice", candidate: e.candidate.toJSON() }); };
-    conn.ontrack = (e) => { if (e.streams[0]) setRemote(e.streams[0]); };
-    conn.onconnectionstatechange = () => {
-      if (conn.connectionState === "failed" || conn.connectionState === "disconnected") {
-        if (pc.current === conn) { toast("Call ended"); cleanup(); }
-      }
-    };
-    pc.current = conn;
-    return conn;
-  }, [getIceServers, send, cleanup]);
+  const makePc = useCallback(
+    (peer: string, forceRelay = false) => {
+      const config = getIceServers(forceRelay);
+      const conn = new RTCPeerConnection(config);
+      conn.onicecandidate = (e) => {
+        if (e.candidate) void send(peer, { type: "ice", candidate: e.candidate.toJSON() });
+      };
+      conn.ontrack = (e) => {
+        if (e.streams[0]) setRemote(e.streams[0]);
+      };
+      conn.onconnectionstatechange = () => {
+        if (conn.connectionState === "failed" || conn.connectionState === "disconnected") {
+          if (pc.current === conn) {
+            toast("Call ended");
+            cleanup();
+          }
+        }
+      };
+      pc.current = conn;
+      return conn;
+    },
+    [getIceServers, send, cleanup],
+  );
 
   const getMedia = async (video: boolean) => {
     const m = await navigator.mediaDevices.getUserMedia({ audio: true, video });
@@ -186,10 +228,22 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
   handler.current = async (s: Signal) => {
     const cur = stateRef.current;
     if (s.type === "offer") {
-      if (cur.status !== "idle") { void send(s.from, { type: "decline" }); return; }
-      if (s.random && !autoAccept.current) { void send(s.from, { type: "decline" }); return; }
+      if (cur.status !== "idle") {
+        void send(s.from, { type: "decline" });
+        return;
+      }
+      if (s.random && !autoAccept.current) {
+        void send(s.from, { type: "decline" });
+        return;
+      }
       pendingOffer.current = s;
-      setState({ status: "incoming", peerId: s.from, peerName: s.name ?? "Someone", video: !!s.video, random: !!s.random });
+      setState({
+        status: "incoming",
+        peerId: s.from,
+        peerName: s.name ?? "Someone",
+        video: !!s.video,
+        random: !!s.random,
+      });
       if (s.random) await accept();
       return;
     }
@@ -199,7 +253,8 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
       await flushIce();
       setState({ ...stateRef.current, status: "active" });
     } else if (s.type === "ice" && s.candidate) {
-      if (pc.current?.remoteDescription) await pc.current.addIceCandidate(s.candidate).catch(() => {});
+      if (pc.current?.remoteDescription)
+        await pc.current.addIceCandidate(s.candidate).catch(() => {});
       else iceQueue.current.push(s.candidate);
     } else if (s.type === "hangup") {
       if (!cur.random) toast("Call ended");
@@ -234,7 +289,20 @@ export function CallProvider({ userId, myName, children }: { userId: string; myN
 
   return (
     <CallCtx.Provider
-      value={{ ...state, local, remote, start, accept, decline, hangup, setAutoAccept: (v) => { autoAccept.current = v; }, toggleMic, toggleCam }}
+      value={{
+        ...state,
+        local,
+        remote,
+        start,
+        accept,
+        decline,
+        hangup,
+        setAutoAccept: (v) => {
+          autoAccept.current = v;
+        },
+        toggleMic,
+        toggleCam,
+      }}
     >
       {children}
     </CallCtx.Provider>

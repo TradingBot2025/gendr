@@ -6,10 +6,14 @@
 function getAudioContextInternal(): AudioContext | null {
   if (typeof window === "undefined") return null;
   try {
-    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as Window & typeof globalThis & { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext;
     if (!AudioContextCtor) return null;
     return new AudioContextCtor();
   } catch {
+    // Ignore initialization errors
     return null;
   }
 }
@@ -17,7 +21,7 @@ function getAudioContextInternal(): AudioContext | null {
 // Store context on window to survive HMR and avoid module-level TDZ issues
 function getStoredContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
-  const w = window as any;
+  const w = window as Window & typeof globalThis & { __appAudioContext?: AudioContext };
   if (!w.__appAudioContext) {
     w.__appAudioContext = getAudioContextInternal();
   }
@@ -32,7 +36,7 @@ export function createBeep(frequency: number, duration: number, volume = 0.3): v
   const ctx = getStoredContext();
   if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume();
-  
+
   try {
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -63,28 +67,39 @@ export function playRingingSound(): void {
   const ctx = getStoredContext();
   if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume();
-  
+
   // Clear any existing pattern
   stopRingingSound();
-  
+
   // Ring pattern: 1s on, 2s off, 1s on, 2s off, 1s on, 4s off (repeats)
   const ringPattern = [
-    { on: true, duration: 1000 },   // Ring for 1s
-    { on: false, duration: 2000 },  // Silent for 2s
-    { on: true, duration: 1000 },   // Ring for 1s
-    { on: false, duration: 2000 },  // Silent for 2s
-    { on: true, duration: 1000 },   // Ring for 1s
-    { on: false, duration: 4000 },  // Silent for 4s
+    { on: true, duration: 1000 }, // Ring for 1s
+    { on: false, duration: 2000 }, // Silent for 2s
+    { on: true, duration: 1000 }, // Ring for 1s
+    { on: false, duration: 2000 }, // Silent for 2s
+    { on: true, duration: 1000 }, // Ring for 1s
+    { on: false, duration: 4000 }, // Silent for 4s
   ];
-  
+
   let patternIndex = 0;
-  
+
   const playRing = () => {
     const segment = ringPattern[patternIndex];
-    
+
     if (!segment) return;
-    if (ringingOscillator) { try { ringingOscillator.stop(); ringingOscillator.disconnect(); } catch {} ringingOscillator = null; }
-    if (ringingGain) { ringingGain.disconnect(); ringingGain = null; }
+    if (ringingOscillator) {
+      try {
+        ringingOscillator.stop();
+        ringingOscillator.disconnect();
+      } catch {
+        // Ignore cleanup errors
+      }
+      ringingOscillator = null;
+    }
+    if (ringingGain) {
+      ringingGain.disconnect();
+      ringingGain = null;
+    }
     if (segment.on) {
       try {
         const oscillator = ctx.createOscillator();
@@ -95,18 +110,18 @@ export function playRingingSound(): void {
         oscillator.type = "sine";
         gain.gain.value = 0.3;
         oscillator.start();
-        
+
         ringingOscillator = oscillator;
         ringingGain = gain;
       } catch {
         // Ignore audio errors
       }
     }
-    
+
     patternIndex = (patternIndex + 1) % ringPattern.length;
     ringingInterval = setTimeout(playRing, segment.duration);
   };
-  
+
   playRing();
 }
 
@@ -115,13 +130,22 @@ export function stopRingingSound(): void {
     clearTimeout(ringingInterval);
     ringingInterval = null;
   }
-  
+
   if (ringingOscillator) {
-    try { ringingOscillator.stop(); ringingOscillator.disconnect(); } catch {}
+    try {
+      ringingOscillator.stop();
+      ringingOscillator.disconnect();
+    } catch {
+      // Ignore cleanup errors
+    }
     ringingOscillator = null;
   }
   if (ringingGain) {
-    try { ringingGain.disconnect(); } catch {}
+    try {
+      ringingGain.disconnect();
+    } catch {
+      // Ignore cleanup errors
+    }
     ringingGain = null;
   }
 }

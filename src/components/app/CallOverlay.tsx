@@ -4,9 +4,19 @@ import { Button } from "@/components/ui/button";
 import { useCall } from "@/lib/calls";
 import { playRingingSound, stopRingingSound, unlockAudioContext } from "@/lib/audio";
 
-export function MediaView({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className?: string }) {
+export function MediaView({
+  stream,
+  muted,
+  className,
+}: {
+  stream: MediaStream | null;
+  muted?: boolean;
+  className?: string;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
-  useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
+  useEffect(() => {
+    if (ref.current) ref.current.srcObject = stream;
+  }, [stream]);
   return <video ref={ref} autoPlay playsInline muted={muted} className={className} />;
 }
 
@@ -16,15 +26,33 @@ export function CallControls() {
   const [cam, setCam] = useState(true);
   return (
     <div className="flex items-center justify-center gap-3">
-      <Button size="icon" variant="secondary" className="h-12 w-12 rounded-full" onClick={() => setMic(c.toggleMic())} aria-label="Toggle microphone">
+      <Button
+        size="icon"
+        variant="secondary"
+        className="h-12 w-12 rounded-full"
+        onClick={() => setMic(c.toggleMic())}
+        aria-label="Toggle microphone"
+      >
         {mic ? <Mic /> : <MicOff />}
       </Button>
       {c.video && (
-        <Button size="icon" variant="secondary" className="h-12 w-12 rounded-full" onClick={() => setCam(c.toggleCam())} aria-label="Toggle camera">
+        <Button
+          size="icon"
+          variant="secondary"
+          className="h-12 w-12 rounded-full"
+          onClick={() => setCam(c.toggleCam())}
+          aria-label="Toggle camera"
+        >
           {cam ? <Video /> : <VideoOff />}
         </Button>
       )}
-      <Button size="icon" variant="destructive" className="h-14 w-14 rounded-full" onClick={c.hangup} aria-label="Hang up">
+      <Button
+        size="icon"
+        variant="destructive"
+        className="h-14 w-14 rounded-full"
+        onClick={c.hangup}
+        aria-label="Hang up"
+      >
         <PhoneOff />
       </Button>
     </div>
@@ -35,7 +63,6 @@ export function CallOverlay() {
   const c = useCall();
 
   // Don't render overlay for random calls (they have their own UI) or idle
-
 
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
@@ -58,7 +85,7 @@ export function CallOverlay() {
     else stopRingingSound();
     return () => stopRingingSound();
   }, [c.status]);
-  
+
   if (c.status === "idle" || c.random) return null;
 
   return (
@@ -79,18 +106,44 @@ export function CallOverlay() {
         <div className="absolute left-0 right-0 top-8 text-center">
           <h2 className="text-2xl">{c.peerName}</h2>
           <p className="text-sm opacity-70">
-            {c.status === "outgoing" ? "Ringing…" : c.status === "incoming" ? `Incoming ${c.video ? "video" : "voice"} call` : c.video ? "Video call" : "Voice call"}
+            {c.status === "outgoing"
+              ? "Ringing…"
+              : c.status === "incoming"
+                ? `Incoming ${c.video ? "video" : "voice"} call`
+                : c.video
+                  ? "Video call"
+                  : "Voice call"}
           </p>
         </div>
         {c.video && c.local && (
-          <MediaView stream={c.local} muted className="absolute bottom-4 right-4 h-40 w-28 rounded-xl border-2 border-stage-foreground/30 object-cover md:h-48 md:w-36" />
+          <MediaView
+            stream={c.local}
+            muted
+            className="absolute bottom-4 right-4 h-40 w-28 rounded-xl border-2 border-stage-foreground/30 object-cover md:h-48 md:w-36"
+          />
         )}
       </div>
       <div className="p-8">
         {c.status === "incoming" ? (
           <div className="flex justify-center gap-10">
-            <Button size="icon" variant="destructive" className="h-16 w-16 rounded-full" onClick={c.decline} aria-label="Decline"><PhoneOff /></Button>
-            <Button size="icon" variant="success" className="h-16 w-16 rounded-full" onClick={c.accept} aria-label="Accept"><Phone /></Button>
+            <Button
+              size="icon"
+              variant="destructive"
+              className="h-16 w-16 rounded-full"
+              onClick={c.decline}
+              aria-label="Decline"
+            >
+              <PhoneOff />
+            </Button>
+            <Button
+              size="icon"
+              variant="success"
+              className="h-16 w-16 rounded-full"
+              onClick={c.accept}
+              aria-label="Accept"
+            >
+              <Phone />
+            </Button>
           </div>
         ) : (
           <CallControls />

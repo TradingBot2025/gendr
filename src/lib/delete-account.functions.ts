@@ -4,7 +4,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const deleteAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { password: string; target_id?: string }) => {
-    if (typeof d?.password !== "string" || d.password.length === 0) throw new Error("Password is required");
+    if (typeof d?.password !== "string" || d.password.length === 0)
+      throw new Error("Password is required");
     return d;
   })
   .handler(async ({ data, context }) => {
@@ -32,14 +33,23 @@ export const deleteAccount = createServerFn({ method: "POST" })
     }
 
     // Delete user data (cascades via FK on auth.users delete, but clean explicitly)
-    await supabase.from("profile_views").delete().or(`viewer_id.eq.${target},viewed_id.eq.${target}`);
+    await supabase
+      .from("profile_views")
+      .delete()
+      .or(`viewer_id.eq.${target},viewed_id.eq.${target}`);
     await supabase.from("photo_albums").delete().eq("user_id", target);
     await supabase.from("photos").delete().eq("user_id", target);
     await supabase.from("connections").delete().or(`requester.eq.${target},addressee.eq.${target}`);
     await supabase.from("messages").delete().or(`sender.eq.${target}`);
     await supabase.from("reports").delete().or(`reporter_id.eq.${target},reported_id.eq.${target}`);
-    await supabase.from("referrals").delete().or(`referrer_id.eq.${target},referee_id.eq.${target}`);
-    await supabase.from("admin_actions").delete().or(`admin_id.eq.${target},target_id.eq.${target}`);
+    await supabase
+      .from("referrals")
+      .delete()
+      .or(`referrer_id.eq.${target},referee_id.eq.${target}`);
+    await supabase
+      .from("admin_actions")
+      .delete()
+      .or(`admin_id.eq.${target},target_id.eq.${target}`);
     await supabase.from("profiles").delete().eq("id", target);
     await supabase.from("user_roles").delete().eq("user_id", target);
 

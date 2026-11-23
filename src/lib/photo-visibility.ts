@@ -1,4 +1,10 @@
-export type PhotoVisibility = { path: string; preview_path?: string | null; is_private: boolean; album_id: string | null; position?: number };
+export type PhotoVisibility = {
+  path: string;
+  preview_path?: string | null;
+  is_private: boolean;
+  album_id: string | null;
+  position?: number;
+};
 
 export function coverPhoto(photos: PhotoVisibility[]) {
   const ordered = [...photos].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));

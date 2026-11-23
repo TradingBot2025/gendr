@@ -34,15 +34,19 @@ export const sendCallSignal = createServerFn({ method: "POST" })
         .maybeSingle();
 
       if (!myQueue || !theirQueue) throw new Error("Not in random queue");
-      if (myQueue.status !== "matched" || theirQueue.status !== "matched") throw new Error("Not matched");
-      if (myQueue.matched_with !== to || theirQueue.matched_with !== userId) throw new Error("Not matched with each other");
+      if (myQueue.status !== "matched" || theirQueue.status !== "matched")
+        throw new Error("Not matched");
+      if (myQueue.matched_with !== to || theirQueue.matched_with !== userId)
+        throw new Error("Not matched with each other");
     } else {
       // For regular calls: check accepted connection exists
       const { data: conn } = await supabase
         .from("connections")
         .select("id")
         .eq("status", "accepted")
-        .or(`and(requester.eq.${userId},addressee.eq.${to}),and(requester.eq.${to},addressee.eq.${userId})`)
+        .or(
+          `and(requester.eq.${userId},addressee.eq.${to}),and(requester.eq.${to},addressee.eq.${userId})`,
+        )
         .maybeSingle();
 
       if (!conn) throw new Error("No accepted connection");

@@ -1,18 +1,45 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Shuffle, SkipForward, Square, Globe, Shield, AlertCircle, UserX, Video, Mic } from "lucide-react";
+import {
+  Shuffle,
+  SkipForward,
+  Square,
+  Globe,
+  Shield,
+  AlertCircle,
+  UserX,
+  Video,
+  Mic,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
 import { useCall } from "@/lib/calls";
 import { MediaView } from "@/components/app/CallOverlay";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { unlockAudioContext, playRingingSound, stopRingingSound } from "@/lib/audio";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/random")({
-  head: () => ({ meta: [{ title: "Random video — Gender" }, { name: "description", content: "Meet someone new on a random video call." }] }),
+  head: () => ({
+    meta: [
+      { title: "Random video — Gender" },
+      { name: "description", content: "Meet someone new on a random video call." },
+    ],
+  }),
   component: Random,
 });
 
@@ -83,9 +110,12 @@ function Random() {
   const [reportReason, setReportReason] = useState("");
   const [reportDetails, setReportDetails] = useState("");
   const uid = me?.user.id;
-  const callRef = useRef(call); callRef.current = call;
-  const searchRef = useRef(searching); searchRef.current = searching;
-  const countryRef = useRef(selectedCountry); countryRef.current = selectedCountry;
+  const callRef = useRef(call);
+  callRef.current = call;
+  const searchRef = useRef(searching);
+  searchRef.current = searching;
+  const countryRef = useRef(selectedCountry);
+  countryRef.current = selectedCountry;
   const peerIdRef = useRef<string | null>(null);
 
   // Unlock audio on first user interaction (mobile)
@@ -110,14 +140,18 @@ function Random() {
     } else if (call.random && call.status !== "incoming") {
       stopRingingSound();
     }
-    return () => { if (call.random) stopRingingSound(); };
+    return () => {
+      if (call.random) stopRingingSound();
+    };
   }, [call.random, call.status]);
 
   // Search for match using server-side RPC
   const findMatch = async () => {
     if (!uid || !consentGiven) return;
     try {
-      const { data, error } = await supabase.rpc("find_random_match", { _country_code: countryRef.current });
+      const { data, error } = await supabase.rpc("find_random_match", {
+        _country_code: countryRef.current,
+      });
       if (error) throw error;
       if (data && data.length > 0) {
         const peer = data[0];
@@ -138,23 +172,43 @@ function Random() {
     if (!uid || !searching) return;
     const ch = supabase
       .channel(`random-queue-${uid}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "random_matchmaking_queue", filter: `user_id=eq.${uid}` }, (payload) => {
-        const newRow = payload.new as any;
-        if (newRow.status === "matched" && newRow.matched_with) {
-          peerIdRef.current = newRow.matched_with;
-          // Get peer name
-          supabase.from("profiles").select("display_name").eq("id", newRow.matched_with).maybeSingle()
-            .then(({ data: peer }) => {
-              if (peer) {
-                void callRef.current.start(newRow.matched_with, peer.display_name ?? "Stranger", true, true);
-              }
-            });
-        } else if (newRow.status === "cancelled" || newRow.status === "expired") {
-          setSearching(false);
-        }
-      })
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "random_matchmaking_queue",
+          filter: `user_id=eq.${uid}`,
+        },
+        (payload) => {
+          const newRow = payload.new as any;
+          if (newRow.status === "matched" && newRow.matched_with) {
+            peerIdRef.current = newRow.matched_with;
+            // Get peer name
+            supabase
+              .from("profiles")
+              .select("display_name")
+              .eq("id", newRow.matched_with)
+              .maybeSingle()
+              .then(({ data: peer }) => {
+                if (peer) {
+                  void callRef.current.start(
+                    newRow.matched_with,
+                    peer.display_name ?? "Stranger",
+                    true,
+                    true,
+                  );
+                }
+              });
+          } else if (newRow.status === "cancelled" || newRow.status === "expired") {
+            setSearching(false);
+          }
+        },
+      )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [uid, searching]);
 
   const stop = () => {
@@ -215,17 +269,25 @@ function Random() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-4xl font-bold">Random video</h1>
-          <p className="text-muted-foreground">Meet someone new. Be kind — you can skip or report anytime.</p>
+          <p className="text-muted-foreground">
+            Meet someone new. Be kind — you can skip or report anytime.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Globe className="h-5 w-5 text-muted-foreground" />
-          <Select value={selectedCountry} onValueChange={setSelectedCountry} disabled={searching || inCall}>
+          <Select
+            value={selectedCountry}
+            onValueChange={setSelectedCountry}
+            disabled={searching || inCall}
+          >
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Worldwide" />
             </SelectTrigger>
             <SelectContent>
               {COUNTRIES.map((c) => (
-                <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>
+                <SelectItem key={c.code} value={c.code}>
+                  {c.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -239,38 +301,91 @@ function Random() {
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-stage-foreground">
               <Shuffle className={`h-10 w-10 ${searching ? "animate-spin" : ""}`} />
-              <span>{searching ? (inCall ? "Connecting…" : "Looking for someone…") : "Press Start to meet someone"}</span>
+              <span>
+                {searching
+                  ? inCall
+                    ? "Connecting…"
+                    : "Looking for someone…"
+                  : "Press Start to meet someone"}
+              </span>
             </div>
           )}
-          {inCall && <span className="absolute left-3 top-3 rounded-full bg-card/80 px-3 py-1 text-sm">{call.peerName}</span>}
+          {inCall && (
+            <span className="absolute left-3 top-3 rounded-full bg-card/80 px-3 py-1 text-sm">
+              {call.peerName}
+            </span>
+          )}
           {inCall && (
             <div className="absolute right-3 top-3 flex gap-1">
-              <Button size="icon" variant="ghost" className="bg-white/90" onClick={() => call.toggleCam()} aria-label="Toggle camera">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="bg-white/90"
+                onClick={() => call.toggleCam()}
+                aria-label="Toggle camera"
+              >
                 <Video className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant="ghost" className="bg-white/90" onClick={() => call.toggleMic()} aria-label="Toggle microphone">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="bg-white/90"
+                onClick={() => call.toggleMic()}
+                aria-label="Toggle microphone"
+              >
                 <Mic className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant="ghost" className="bg-white/90" onClick={() => { setShowReport(true); peerIdRef.current = call.peerId; }} aria-label="Report user">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="bg-white/90"
+                onClick={() => {
+                  setShowReport(true);
+                  peerIdRef.current = call.peerId;
+                }}
+                aria-label="Report user"
+              >
                 <AlertCircle className="h-4 w-4 text-destructive" />
               </Button>
             </div>
           )}
         </div>
         <div className="aspect-video overflow-hidden rounded-3xl bg-muted">
-          {call.local && call.random ? <MediaView stream={call.local} muted className="h-full w-full -scale-x-100 object-cover" /> : <div className="flex h-full items-center justify-center text-muted-foreground">Your camera</div>}
+          {call.local && call.random ? (
+            <MediaView
+              stream={call.local}
+              muted
+              className="h-full w-full -scale-x-100 object-cover"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              Your camera
+            </div>
+          )}
         </div>
       </div>
 
       <div className="mt-6 flex justify-center gap-3">
         {!searching && !inCall && !consentGiven ? (
-          <Button variant="hero" size="lg" onClick={() => setShowConsent(true)}><Shield className="h-4 w-4 mr-2" />Start</Button>
+          <Button variant="hero" size="lg" onClick={() => setShowConsent(true)}>
+            <Shield className="h-4 w-4 mr-2" />
+            Start
+          </Button>
         ) : !searching && !inCall && consentGiven ? (
-          <Button variant="hero" size="lg" onClick={findMatch}><Shuffle className="h-4 w-4 mr-2" />Find Match</Button>
+          <Button variant="hero" size="lg" onClick={findMatch}>
+            <Shuffle className="h-4 w-4 mr-2" />
+            Find Match
+          </Button>
         ) : (
           <>
-            <Button variant="secondary" size="lg" onClick={next}><SkipForward className="h-4 w-4 mr-2" />Next</Button>
-            <Button variant="destructive" size="lg" onClick={stop}><Square className="h-4 w-4 mr-2" />Stop</Button>
+            <Button variant="secondary" size="lg" onClick={next}>
+              <SkipForward className="h-4 w-4 mr-2" />
+              Next
+            </Button>
+            <Button variant="destructive" size="lg" onClick={stop}>
+              <Square className="h-4 w-4 mr-2" />
+              Stop
+            </Button>
           </>
         )}
       </div>
@@ -307,8 +422,12 @@ function Random() {
             </label>
           </div>
           <div className="flex gap-2 border-t pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => setShowConsent(false)}>Cancel</Button>
-            <Button variant="hero" className="flex-1" onClick={handleConsentAccept}>I Accept</Button>
+            <Button variant="outline" className="flex-1" onClick={() => setShowConsent(false)}>
+              Cancel
+            </Button>
+            <Button variant="hero" className="flex-1" onClick={handleConsentAccept}>
+              I Accept
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -318,13 +437,17 @@ function Random() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Report User</DialogTitle>
-            <DialogDescription>Help keep the community safe. Reports are reviewed by our team.</DialogDescription>
+            <DialogDescription>
+              Help keep the community safe. Reports are reviewed by our team.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Reason</label>
               <Select value={reportReason} onValueChange={setReportReason}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a reason" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="inappropriate_content">Inappropriate Content</SelectItem>
                   <SelectItem value="harassment">Harassment</SelectItem>
@@ -346,8 +469,25 @@ function Random() {
             </div>
           </div>
           <div className="flex gap-2 border-t pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => { setShowReport(false); setReportReason(""); setReportDetails(""); }}>Cancel</Button>
-            <Button variant="destructive" className="flex-1" onClick={handleReport} disabled={!reportReason}>Report & Block</Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setShowReport(false);
+                setReportReason("");
+                setReportDetails("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              onClick={handleReport}
+              disabled={!reportReason}
+            >
+              Report & Block
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

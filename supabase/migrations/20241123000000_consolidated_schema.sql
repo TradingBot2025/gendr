@@ -148,7 +148,7 @@ DROP POLICY IF EXISTS "read own roles" ON public.user_roles;
 CREATE POLICY "read own roles" ON public.user_roles FOR SELECT TO authenticated
 USING (user_id = auth.uid() OR public.has_role(auth.uid(),'admin'));
 
--- 7. handle_new_user trigger (first user becomes admin atomically)
+-- 7. handle_new_user trigger (admin role assigned via configured email or first user fallback)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -156,6 +156,8 @@ DECLARE
   base_username text;
   final_username text;
   counter int := 1;
+  admin_email text := current_setting('app.admin_email', true);
+  is_admin boolean := false;
 BEGIN
   base_username := COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', SPLIT_PART(NEW.email,'@',1));
   base_username := lower(regexp_replace(base_username, '[^a-z0-9_]', '', 'g'));
@@ -170,11 +172,22 @@ BEGIN
   INSERT INTO public.profiles (id, display_name, username)
   VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', SPLIT_PART(NEW.email,'@',1)), final_username);
   INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, 'user');
-  -- Atomically assign admin role to first user (using advisory lock to prevent race)
-  PERFORM pg_advisory_xact_lock(1234567890);
-  IF NOT EXISTS (SELECT 1 FROM public.user_roles WHERE role = 'admin') THEN
+
+  -- Check if this user matches the configured admin email
+  IF admin_email IS NOT NULL AND admin_email <> '' AND lower(NEW.email) = lower(admin_email) THEN
+    is_admin := true;
+  -- Fallback: first user becomes admin (with advisory lock for atomicity)
+  ELSIF admin_email IS NULL OR admin_email = '' THEN
+    PERFORM pg_advisory_xact_lock(1234567890);
+    IF NOT EXISTS (SELECT 1 FROM public.user_roles WHERE role = 'admin') THEN
+      is_admin := true;
+    END IF;
+  END IF;
+
+  IF is_admin THEN
     INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, 'admin');
   END IF;
+
   RETURN NEW;
 END; $$;
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
@@ -560,19 +573,7 @@ CREATE POLICY "referrals readable" ON public.referrals FOR SELECT TO authenticat
 DROP POLICY IF EXISTS "own referrals insert" ON public.referrals;
 CREATE POLICY "own referrals insert" ON public.referrals FOR INSERT TO authenticated WITH CHECK (referrer_id = auth.uid());
 
--- 27. ads_placements
-CREATE TABLE IF NOT EXISTS public.ads_placements (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  position text NOT NULL DEFAULT 'bottom',
-  is_active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-ALTER TABLE public.ads_placements ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "ads readable" ON public.ads_placements;
-CREATE POLICY "ads readable" ON public.ads_placements FOR SELECT TO authenticated USING (true);
-
--- 28. random_matchmaking_queue (NEW: for server-side random matching)
+-- 27. random_matchmaking_queue (NEW: for server-side random matching)
 CREATE TABLE IF NOT EXISTS public.random_matchmaking_queue (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
