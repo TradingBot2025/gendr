@@ -16,24 +16,24 @@ export type Database = {
     Tables: {
       admin_actions: {
         Row: {
-          admin_id: string
           action_type: string
+          admin_id: string
           created_at: string
           details: string | null
           id: string
           target_id: string
         }
         Insert: {
-          admin_id: string
           action_type: string
+          admin_id: string
           created_at?: string
           details?: string | null
           id?: string
           target_id: string
         }
         Update: {
-          admin_id?: string
           action_type?: string
+          admin_id?: string
           created_at?: string
           details?: string | null
           id?: string
@@ -79,6 +79,48 @@ export type Database = {
           position?: string
         }
         Relationships: []
+      }
+      album_access_requests: {
+        Row: {
+          album_id: string
+          created_at: string
+          id: string
+          note: string | null
+          requester_id: string
+          status: string
+        }
+        Insert: {
+          album_id: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          requester_id: string
+          status?: string
+        }
+        Update: {
+          album_id?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          requester_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "album_access_requests_album_id_fkey"
+            columns: ["album_id"]
+            isOneToOne: false
+            referencedRelation: "photo_albums"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "album_access_requests_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       connections: {
         Row: {
@@ -131,7 +173,9 @@ export type Database = {
           expires_at: string | null
           id: string
           max_views: number | null
+          read_at: string | null
           sender: string
+          unsent: boolean
           view_count: number
         }
         Insert: {
@@ -145,7 +189,9 @@ export type Database = {
           expires_at?: string | null
           id?: string
           max_views?: number | null
+          read_at?: string | null
           sender: string
+          unsent?: boolean
           view_count?: number
         }
         Update: {
@@ -159,7 +205,9 @@ export type Database = {
           expires_at?: string | null
           id?: string
           max_views?: number | null
+          read_at?: string | null
           sender?: string
+          unsent?: boolean
           view_count?: number
         }
         Relationships: [
@@ -219,6 +267,7 @@ export type Database = {
           is_private: boolean
           path: string
           position: number
+          preview_path: string | null
           user_id: string
           view_timer: string
         }
@@ -229,6 +278,7 @@ export type Database = {
           is_private?: boolean
           path: string
           position?: number
+          preview_path?: string | null
           user_id: string
           view_timer?: string
         }
@@ -239,6 +289,7 @@ export type Database = {
           is_private?: boolean
           path?: string
           position?: number
+          preview_path?: string | null
           user_id?: string
           view_timer?: string
         }
@@ -309,8 +360,7 @@ export type Database = {
           id: string
           is_online: boolean
           last_seen_at: string | null
-          latitude: number | null
-          longitude: number | null
+          looking_for: string | null
           orientation: string | null
           username: string | null
           verified: boolean
@@ -328,8 +378,7 @@ export type Database = {
           id: string
           is_online?: boolean
           last_seen_at?: string | null
-          latitude?: number | null
-          longitude?: number | null
+          looking_for?: string | null
           orientation?: string | null
           username?: string | null
           verified?: boolean
@@ -347,8 +396,7 @@ export type Database = {
           id?: string
           is_online?: boolean
           last_seen_at?: string | null
-          latitude?: number | null
-          longitude?: number | null
+          looking_for?: string | null
           orientation?: string | null
           username?: string | null
           verified?: boolean
@@ -361,8 +409,8 @@ export type Database = {
           completed_at: string | null
           created_at: string
           id: string
-          referrer_id: string
           referee_id: string | null
+          referrer_id: string
           status: string
         }
         Insert: {
@@ -370,8 +418,8 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           id?: string
-          referrer_id: string
           referee_id?: string | null
+          referrer_id: string
           status?: string
         }
         Update: {
@@ -379,8 +427,8 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           id?: string
-          referrer_id?: string
           referee_id?: string | null
+          referrer_id?: string
           status?: string
         }
         Relationships: [
@@ -438,7 +486,7 @@ export type Database = {
           reason?: string
           reason_category?: string | null
           reported_id?: string
-          reviewer_id?: string | null
+          reporter_id?: string
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string
@@ -494,6 +542,11 @@ export type Database = {
         Args: { _banned: boolean; _target: string; _verified: boolean }
         Returns: undefined
       }
+      auto_block_reported_user: {
+        Args: { _reported_id: string; _reporter_id: string }
+        Returns: undefined
+      }
+      can_read_photo: { Args: { _path: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -501,7 +554,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_message_view: { Args: { message_id: string }; Returns: boolean }
       is_connected: { Args: { _conn: string }; Returns: boolean }
+      mark_chat_read: { Args: { _connection_id: string }; Returns: undefined }
+      unsend_message: { Args: { _message_id: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "user"
@@ -536,7 +592,7 @@ export type Tables<
     ? R
     : never
   : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-      DefaultSchema["Views"])
+        DefaultSchema["Views"])
     ? (DefaultSchema["Tables"] &
         DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R

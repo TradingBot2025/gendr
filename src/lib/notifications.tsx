@@ -1,14 +1,15 @@
-"use client";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { supabase } from '@/integrations/supabase/client';
+import { useMe } from '@/lib/data';
+import { toast } from 'sonner';
 
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useMe } from "@/lib/data";
-import { toast } from "sonner";
-import { Bell, X, MessageCircle, UserPlus, ExternalLink, Activity } from "lucide-react";
+export type NotificationType = 'message' | 'connection_request' | 'connection_accepted' | 'album_access';
 
-interface Notification {
+export interface AppNotification {
   id: string;
-  type: "message" | "connection_request" | "connection_accepted";
+  type: NotificationType;
   title: string;
   body: string;
   timestamp: Date;
@@ -19,315 +20,156 @@ interface Notification {
   senderName?: string;
 }
 
-interface NotificationContextType {
-  notifications: Notification[];
+interface NotificationCtx {
   unreadCount: number;
+  notifications: AppNotification[];
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   removeNotification: (id: string) => void;
 }
 
-const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+const NotificationContext = createContext<NotificationCtx>({
+  unreadCount: 0,
+  notifications: [],
+  markAsRead: () => {},
+  markAllAsRead: () => {},
+  removeNotification: () => {},
+});
+
+export const useNotifications = () => useContext(NotificationContext);
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const { data: me } = useMe();
   const uid = me?.user.id;
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const path = useRouterState({ select: state => state.location.pathname });
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  // Count unread DB messages
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ['unread-messages', uid], enabled: !!uid, refetchInterval: 30000,
+    queryFn: async () => {
+      if (!uid) return 0;
+      const { count, error } = await supabase.from('messages').select('id', { count: 'exact', head: true }).neq('sender', uid).is('read_at', null).eq('unsent', false);
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
 
-  const markAsRead = (id: string) => {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-  };
+  const markAsRead = useCallback((id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  }, []);
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  };
+  const markAllAsRead = useCallback(() => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  }, []);
 
-  const removeNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-  };
+  const removeNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
 
-  // Online status tracking
-  const updateOnlineStatus = useCallback(async (isOnline: boolean) => {
+  // Keep online status up to date
+  useEffect(() => {
     if (!uid) return;
-    await supabase.from("profiles").update({ 
-      is_online: isOnline,
-      last_seen_at: new Date().toISOString()
-    }).eq("id", uid);
+    const update = () => {
+      void supabase.from('profiles').update({ is_online: !document.hidden, last_seen_at: new Date().toISOString() }).eq('id', uid);
+    };
+    update();
+    const timer = setInterval(update, 60000);
+    document.addEventListener('visibilitychange', update);
+    const handleUnload = () => { void supabase.from('profiles').update({ is_online: false }).eq('id', uid); };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', update); window.removeEventListener('beforeunload', handleUnload); };
   }, [uid]);
 
+  // Real-time notifications via Postgres changes
   useEffect(() => {
     if (!uid) return;
 
-    // Set online on mount
-    updateOnlineStatus(true);
+    const channel = supabase.channel(`app-alerts-${uid}-${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async ({ new: message }) => {
+        if (message['sender'] === uid) return;
+        void qc.invalidateQueries({ queryKey: ['unread-messages'] });
+        void qc.invalidateQueries({ queryKey: ['messages'] });
+        void qc.invalidateQueries({ queryKey: ['inbox'] });
 
-    // Update last_seen_at periodically
-    const interval = setInterval(() => {
-      updateOnlineStatus(true);
-    }, 30000);
+        const connId = String(message['connection_id']);
+        if (path === `/chat/${connId}`) return; // already in that chat
 
-    // Set offline on unmount
-    const handleBeforeUnload = () => {
-      updateOnlineStatus(false);
-    };
+        const { data: sender } = await supabase.from('profiles').select('display_name').eq('id', String(message['sender'])).maybeSingle();
+        const senderName = sender?.display_name ?? 'Someone';
+        const body = String(message['body'] ?? (message['attachment_path'] ? '📎 Sent an attachment' : 'New message'));
 
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) {
-        updateOnlineStatus(false);
-      } else {
-        updateOnlineStatus(true);
-      }
-    });
+        setNotifications(prev => [{
+          id: `msg-${message['id']}`,
+          type: 'message',
+          title: senderName,
+          body,
+          timestamp: new Date(),
+          read: false,
+          actionUrl: `/chat/${connId}`,
+          actionLabel: 'Open chat',
+          senderName,
+        }, ...prev.slice(0, 49)]);
 
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      updateOnlineStatus(false);
-    };
-  }, [uid, updateOnlineStatus]);
+        toast(senderName, {
+          description: body,
+          action: { label: 'Open', onClick: () => void navigate({ to: '/chat/$id', params: { id: connId } }) },
+          duration: 8000,
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, async ({ new: connection, eventType }) => {
+        void qc.invalidateQueries({ queryKey: ['connections'] });
+        void qc.invalidateQueries({ queryKey: ['discover'] });
+        void qc.invalidateQueries({ queryKey: ['dashboard'] });
 
-  // Real-time notifications
-  useEffect(() => {
-    if (!uid) return;
-
-    const messageChannel = supabase
-      .channel("messages_realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `connection_id=in.(select id from connections where requester='${uid}' or addressee='${uid}')`,
-        },
-        async (payload) => {
-          const newMsg = payload.new as any;
-          if (newMsg.sender === uid) return;
-
-          const { data: sender } = await supabase
-            .from("profiles")
-            .select("display_name, photos(path)")
-            .eq("id", newMsg.sender)
-            .maybeSingle();
-
-          const photoPath = sender?.photos?.[0]?.path;
-          const { data: signedUrl } = photoPath ? await supabase.storage.from("photos").createSignedUrl(photoPath, 3600) : { data: null };
-
-          setNotifications((prev) => [
-            {
-              id: `msg-${newMsg.id}`,
-              type: "message",
-              title: sender?.display_name ?? "New message",
-              body: newMsg.body ?? (newMsg.attachment_path ? "📎 Attachment" : "New message"),
-              timestamp: new Date(),
-              read: false,
-              actionUrl: `/chat/${newMsg.connection_id}`,
-              actionLabel: "Open chat",
-              avatar: signedUrl?.signedUrl,
-              senderName: sender?.display_name,
-            },
-            ...prev.slice(0, 49),
-          ]);
-
-          toast.success(`${sender?.display_name ?? "Someone"}: ${newMsg.body ?? "📎 Attachment"}`, {
-            action: {
-              label: "Open",
-              onClick: () => { window.location.href = `/chat/${newMsg.connection_id}`; },
-            },
-            duration: 10000,
-          });
+        if (eventType === 'INSERT' && connection['addressee'] === uid) {
+          toast('New match request', { action: { label: 'View', onClick: () => void navigate({ to: '/connections' }) } });
+          setNotifications(prev => [{
+            id: `conn-req-${connection['id']}`,
+            type: 'connection_request',
+            title: 'New connection request',
+            body: 'Someone wants to connect with you',
+            timestamp: new Date(),
+            read: false,
+            actionUrl: '/connections',
+            actionLabel: 'View requests',
+          }, ...prev.slice(0, 49)]);
         }
-      )
+        if (eventType === 'UPDATE' && connection['requester'] === uid && connection['status'] === 'accepted') {
+          const connId = String(connection['id']);
+          toast.success("It's a match!", { action: { label: 'Chat', onClick: () => void navigate({ to: '/chat/$id', params: { id: connId } }) } });
+          setNotifications(prev => [{
+            id: `conn-acc-${connId}`,
+            type: 'connection_accepted',
+            title: "It's a match!",
+            body: 'Your connection request was accepted',
+            timestamp: new Date(),
+            read: false,
+            actionUrl: `/chat/${connId}`,
+            actionLabel: 'Start chat',
+          }, ...prev.slice(0, 49)]);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'album_access_requests' }, ({ new: request, eventType }) => {
+        void qc.invalidateQueries({ queryKey: ['album-access'] });
+        void qc.invalidateQueries({ queryKey: ['profile-view'] });
+        if (eventType === 'INSERT' && request['requester_id'] !== uid) {
+          toast('Private album access requested', { action: { label: 'Review', onClick: () => void navigate({ to: '/albums' }) } });
+        }
+        if (eventType === 'UPDATE' && request['requester_id'] === uid && request['status'] === 'approved') {
+          toast.success('Private album access approved!');
+        }
+      })
       .subscribe();
 
-    const connectionChannel = supabase
-      .channel("connections_realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "connections",
-          filter: `addressee=eq.${uid}`,
-        },
-        async (payload) => {
-          const conn = payload.new as any;
-          if (!conn) return;
-
-          const { data: requester } = await supabase
-            .from("profiles")
-            .select("display_name, photos(path)")
-            .eq("id", conn.requester)
-            .maybeSingle();
-
-          const photoPath = requester?.photos?.[0]?.path;
-          const { data: signedUrl } = photoPath ? await supabase.storage.from("photos").createSignedUrl(photoPath, 3600) : { data: null };
-
-          if (payload.eventType === "INSERT" || (payload.eventType === "UPDATE" && conn.status === "pending")) {
-            setNotifications((prev) => [
-              {
-                id: `conn-req-${conn.id}`,
-                type: "connection_request",
-                title: "New connection request",
-                body: `${requester?.display_name ?? "Someone"} wants to connect`,
-                timestamp: new Date(),
-                read: false,
-                actionUrl: "/connections",
-                actionLabel: "View requests",
-                avatar: signedUrl?.signedUrl,
-                senderName: requester?.display_name,
-              },
-              ...prev.slice(0, 49),
-            ]);
-
-            toast.info(`${requester?.display_name ?? "Someone"} wants to connect`, {
-              action: {
-                label: "View",
-                onClick: () => { window.location.href = "/connections"; },
-              },
-              duration: 10000,
-            });
-          } else if (payload.eventType === "UPDATE" && conn.status === "accepted") {
-            setNotifications((prev) => [
-              {
-                id: `conn-acc-${conn.id}`,
-                type: "connection_accepted",
-                title: "Connection accepted!",
-                body: `${requester?.display_name ?? "Someone"} accepted your request`,
-                timestamp: new Date(),
-                read: false,
-                actionUrl: `/chat/${conn.id}`,
-                actionLabel: "Start chat",
-                avatar: signedUrl?.signedUrl,
-                senderName: requester?.display_name,
-              },
-              ...prev.slice(0, 49),
-            ]);
-
-            toast.success(`${requester?.display_name ?? "Someone"} accepted your connection!`, {
-              action: {
-                label: "Chat",
-                onClick: () => { window.location.href = `/chat/${conn.id}`; },
-              },
-              duration: 10000,
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      messageChannel.unsubscribe();
-      connectionChannel.unsubscribe();
-    };
-  }, [uid]);
+    return () => { void supabase.removeChannel(channel); };
+  }, [uid, path, qc, navigate]);
 
   return (
-    <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead, removeNotification }}>
+    <NotificationContext.Provider value={{ unreadCount, notifications, markAsRead, markAllAsRead, removeNotification }}>
       {children}
-      {/* NotificationBell removed - using toast notifications at top-center instead */}
     </NotificationContext.Provider>
-  );
-}
-
-export function useNotifications() {
-  const context = useContext(NotificationContext);
-  if (!context) throw new Error("useNotifications must be used within NotificationProvider");
-  return context;
-}
-
-function NotificationBell() {
-  const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } = useNotifications();
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="fixed bottom-4 right-4 z-50 md:bottom-20 md:right-6">
-      <div className="relative">
-        <button
-          onClick={() => setOpen(!open)}
-          className={`relative p-3 rounded-full bg-card shadow-lg border transition-all ${unreadCount > 0 ? "bg-primary text-primary-foreground" : "bg-muted"}`}
-          aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
-        >
-          <Bell className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-        </button>
-
-        {open && (
-          <div className="absolute bottom-14 right-0 w-80 md:w-96 bg-card border rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-            <div className="flex items-center justify-between p-3 border-b">
-              <div className="flex items-center gap-2">
-                <Activity className="h-4 w-4 text-green-500" />
-                <h3 className="font-semibold">Notifications</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                {unreadCount > 0 && (
-                  <button
-                    onClick={markAllAsRead}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    Mark all read
-                  </button>
-                )}
-                <button onClick={() => setOpen(false)} className="p-1">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-            <div className="max-h-[400px] overflow-y-auto">
-              {notifications.length === 0 ? (
-                <div className="p-6 text-center text-muted-foreground">
-                  No notifications yet
-                </div>
-              ) : (
-                <ul className="divide-y">
-                  {notifications.map((n) => (
-                    <li
-                      key={n.id}
-                      className={`p-3 hover:bg-accent transition-colors ${!n.read ? "bg-accent/30" : ""}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        {n.avatar && (
-                          <img src={n.avatar} alt={n.senderName ?? ""} className="h-10 w-10 rounded-full object-cover" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className={`font-medium ${!n.read ? "font-semibold" : ""}`}>{n.title}</p>
-                          <p className="text-sm text-muted-foreground truncate">{n.body}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {new Date(n.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </p>
-                          {n.actionUrl && (
-                            <a
-                              href={n.actionUrl}
-                              onClick={() => { markAsRead(n.id); setOpen(false); }}
-                              className="text-xs text-primary hover:underline inline-flex items-center gap-1 mt-1"
-                            >
-                              {n.actionLabel}
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          )}
-                        </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); removeNotification(n.id); }}
-                          className="text-muted-foreground hover:text-foreground p-1"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
   );
 }

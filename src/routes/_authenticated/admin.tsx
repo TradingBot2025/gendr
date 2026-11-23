@@ -63,8 +63,7 @@ function Admin() {
   const handleDelete = async () => {
     if (!delTarget) return;
     try {
-      const { error } = await deleteAccount({ data: { password: delPwd, target_id: delTarget.id } });
-      if (error) throw error;
+      await deleteAccount({ data: { password: delPwd, target_id: delTarget.id } });
       await adminRecordAction(delTarget.id, "delete", `deleted by admin ${me.user.id}`);
       toast.success("Account deleted");
       qc.invalidateQueries({ queryKey: ["admin-users"] });
@@ -98,7 +97,7 @@ function Admin() {
         {stats.map((s) => <div key={s.l} className="rounded-3xl border bg-card p-5 shadow-soft"><div className="text-3xl font-bold">{s.v}</div><div className="text-sm text-muted-foreground">{s.l}</div></div>)}
       </div>
 
-      <Tabs defaultValue={tab} onValueChange={setTab}>
+      <Tabs defaultValue={tab} onValueChange={v => { if (v === "members" || v === "reports" || v === "actions" || v === "connections") setTab(v); }}>
         <TabsList className="mb-6">
           <TabsTrigger value="members">Members</TabsTrigger>
           <TabsTrigger value="connections">Connections ({declined.length} declined)</TabsTrigger>
@@ -243,9 +242,9 @@ function Admin() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <form onSubmit={handleDelete} className="space-y-2">
-              <div className="space-y-1.5"><Label>Admin password</Label><Input type="password" value={delPwd} onChange={(e) => setDelPwd(e.value)} required /></div>
-              <AlertDialogAction variant="destructive" type="submit" disabled={!delPwd}>Delete account</AlertDialogAction>
+            <form onSubmit={e => { e.preventDefault(); void handleDelete(); }} className="space-y-2">
+              <div className="space-y-1.5"><Label>Admin password</Label><Input type="password" value={delPwd} onChange={(e) => setDelPwd(e.target.value)} required /></div>
+              <AlertDialogAction className="bg-destructive text-destructive-foreground" type="submit" disabled={!delPwd}>Delete account</AlertDialogAction>
             </form>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -259,7 +258,7 @@ function Admin() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" type="submit" onClick={resetConnection}>Reset connection</AlertDialogAction>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground" type="submit" onClick={resetConnection}>Reset connection</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

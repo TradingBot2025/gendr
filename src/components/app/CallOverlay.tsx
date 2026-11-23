@@ -35,7 +35,7 @@ export function CallOverlay() {
   const c = useCall();
 
   // Don't render overlay for random calls (they have their own UI) or idle
-  if (c.status === "idle" || c.random) return null;
+
 
   // Unlock audio on first user interaction (mobile)
   useEffect(() => {
@@ -59,6 +59,8 @@ export function CallOverlay() {
     return () => stopRingingSound();
   }, [c.status]);
   
+  if (c.status === "idle" || c.random) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-stage text-stage-foreground">
       <div className="relative flex-1 overflow-hidden">
