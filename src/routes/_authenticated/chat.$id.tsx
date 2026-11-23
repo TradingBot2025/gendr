@@ -19,6 +19,7 @@ import {
   Camera,
   RotateCcw,
   MoreHorizontal,
+  Copy,
   User,
   Flag,
   UserX,
@@ -104,7 +105,13 @@ const REPORT_REASONS = [
   { value: "other", label: "Other", description: "Something not listed here" },
 ];
 
-const DISAPPEAR_OPTIONS = [{ value: 86400, label: "24 hours" }];
+const DISAPPEAR_OPTIONS = [
+  { value: 10, label: "10 seconds" },
+  { value: 60, label: "1 minute" },
+  { value: 3600, label: "1 hour" },
+  { value: 86400, label: "24 hours" },
+  { value: 604800, label: "7 days" },
+];
 
 // Renders a timed photo (10s/15s) with a live countdown. Once the countdown
 // reaches zero the image is replaced by a "Photo expired" placeholder and is
@@ -333,24 +340,6 @@ function Chat() {
   const disappearLabel = formatDisappear(disappearSeconds) ?? "24 hours";
 
   const now = Date.now();
-  const expired = (msgs ?? []).filter(
-    (m) => m.expires_at && new Date(m.expires_at).getTime() < now,
-  );
-
-  // Check if message is a short-timer message (10s/15s) that should disappear immediately when expired
-  const isShortTimer = (m: Message) =>
-    m.expires_at && new Date(m.expires_at).getTime() - new Date(m.created_at).getTime() < 60 * 1000;
-
-  // Message is expired AND should be hidden (short timer) OR view limited
-  const isExpiredAndHidden = (m: Message) => {
-    if (!m.expires_at) return false;
-    const isExpired = new Date(m.expires_at).getTime() < now;
-    if (!isExpired) return false;
-    // Short timer messages (10s/15s) should disappear immediately
-    if (isShortTimer(m)) return true;
-    // 24h messages should show as expired but not blur/hide
-    return false;
-  };
 
   const sendMsg = async (fields: {
     body?: string;
@@ -697,14 +686,12 @@ function Chat() {
       </Dialog>
 
       <div className="flex-1 space-y-2 overflow-y-auto bg-muted/40 p-4">
+        <div className="mx-auto mb-2 w-fit rounded-full bg-card px-3 py-1 text-center text-[11px] text-muted-foreground shadow-soft">
+          <Clock className="mr-1 inline h-3 w-3" />
+          Messages disappear after {disappearLabel}
+        </div>
         {!msgs?.length && (
           <p className="py-10 text-center text-muted-foreground">Say hi to {name} 👋</p>
-        )}
-        {expired.length > 0 && (
-          <div className="mb-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-[11px] text-destructive text-center">
-            {expired.length} message{expired.length !== 1 ? "s" : ""} expired and were deleted (
-            {disappearLabel} limit).
-          </div>
         )}
         {msgs?.map((m) => {
           const mine = m.sender === uid;
@@ -759,7 +746,7 @@ function Chat() {
                 {isUnsent ? (
                   <div className="flex items-center gap-2 text-xs opacity-60">
                     <RotateCcw className="h-3 w-3" />
-                    <span>Message unsent</span>
+                    <span>This message was unsent</span>
                   </div>
                 ) : (
                   <>
@@ -870,15 +857,39 @@ function Chat() {
                         })}
                       </span>
                       {mine && !isUnsent && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-[10px] opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                          onClick={() => unsendMessage(m.id)}
-                          title="Unsend"
-                        >
-                          <RotateCcw className="h-3 w-3" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+                              title="Message options"
+                              aria-label="Message options"
+                            >
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-40">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                if (m.body) {
+                                  void navigator.clipboard?.writeText(m.body);
+                                  toast.success("Copied");
+                                } else {
+                                  toast.error("Nothing to copy");
+                                }
+                              }}
+                            >
+                              <Copy className="h-4 w-4 mr-2" /> Copy
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => unsendMessage(m.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <RotateCcw className="h-4 w-4 mr-2" /> Unsend
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </div>
                     {isExpired && !isShortTimer && (
