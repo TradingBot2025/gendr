@@ -3,9 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, type Profile } from "@/lib/data";
-import { ProfileCard } from "@/components/app/ProfileCard";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   MessageCircle,
   Loader2,
@@ -18,6 +16,7 @@ import {
   Flag,
   UserX,
   FileText,
+  Star,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -126,6 +125,25 @@ function Messages() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [reportTargetId, setReportTargetId] = useState("");
   const [reportTargetName, setReportTargetName] = useState("");
+  // Inbox filter chip: all | unread | favorite | online
+  const [filter, setFilter] = useState<"all" | "unread" | "favorite" | "online">("all");
+  // Favorites are a client-side concept (no DB table); persisted in localStorage.
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("fav_connections") ?? "[]"));
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleFavorite = (connectionId: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(connectionId)) next.delete(connectionId);
+      else next.add(connectionId);
+      localStorage.setItem("fav_connections", JSON.stringify([...next]));
+      return next;
+    });
+  };
 
   const { data: inboxData, isLoading: inboxLoading } = useQuery({
     queryKey: ["inbox", uid],
@@ -146,7 +164,7 @@ function Messages() {
         supabase
           .from("public_profiles")
           .select(
-            "id,username,display_name,gender,orientation,age,city,country,bio,verified,last_seen_at",
+            "id,username,display_name,gender,orientation,age,city,country,bio,verified,last_seen_at,is_online",
           )
           .in("id", otherIds),
         supabase
@@ -171,8 +189,12 @@ function Messages() {
       });
 
       const latestMsg: Record<string, (typeof messages)[0]> = {};
+      const unreadCount: Record<string, number> = {};
       messages?.forEach((m) => {
         if (!latestMsg[m.connection_id]) latestMsg[m.connection_id] = m;
+        if (m.sender !== uid && !m.read_at) {
+          unreadCount[m.connection_id] = (unreadCount[m.connection_id] ?? 0) + 1;
+        }
       });
 
       return myConns
@@ -180,7 +202,14 @@ function Messages() {
           const pid = c.requester === uid ? c.addressee : c.requester;
           const profile = profiles?.find((p) => p.id === pid);
           const msg = latestMsg[c.id];
-          return { connection: c, profile, lastMessage: msg, photo: firstPhoto[pid] };
+          return {
+            connection: c,
+            profile,
+            lastMessage: msg,
+            photo: firstPhoto[pid],
+            unreadCount: unreadCount[c.id] ?? 0,
+            isOnline: !!profile?.is_online,
+          };
         })
         .filter((x) => x.profile);
     },
@@ -309,6 +338,14 @@ function Messages() {
   useEffect(() => {
     if (myRequests) setMyApprovedRequests(myRequests);
   }, [myRequests]);
+
+  // Apply the active filter chip to the inbox.
+  const filteredInbox = (inboxData ?? []).filter((d) => {
+    if (filter === "unread") return d.unreadCount > 0;
+    if (filter === "favorite") return favorites.has(d.connection.id);
+    if (filter === "online") return d.isOnline;
+    return true;
+  });
 
   const urls = useSigned("photos", [
     ...(inboxData ?? []).map((d) => d.photo),
@@ -532,6 +569,31 @@ function Messages() {
         </section>
       )}
 
+      {/* Filter chips */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {(
+          [
+            { key: "all", label: "All" },
+            { key: "unread", label: "Unread" },
+            { key: "favorite", label: "Favorite" },
+            { key: "online", label: "Online" },
+          ] as const
+        ).map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setFilter(f.key)}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+              filter === f.key
+                ? "bg-primary text-primary-foreground"
+                : "bg-card border text-muted-foreground hover:bg-accent"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {/* Conversations */}
       {inboxData && inboxData.length === 0 ? (
         <div className="rounded-3xl border bg-card p-12 text-center">
@@ -544,90 +606,135 @@ function Messages() {
             <Link to="/discover">Discover people</Link>
           </Button>
         </div>
+      ) : filteredInbox.length === 0 ? (
+        <div className="rounded-3xl border bg-card p-12 text-center text-muted-foreground">
+          No conversations match this filter.
+        </div>
       ) : (
         <div className="space-y-2">
-          {inboxData?.map((d) => {
+          {filteredInbox.map((d) => {
             const profileUsername =
               d.profile.username && d.profile.username.trim() !== ""
                 ? d.profile.username
                 : d.profile.id;
+            const isFavorite = favorites.has(d.connection.id);
+            const unread = d.unreadCount ?? 0;
             return (
               <div
                 key={d.connection.id}
-                className="rounded-3xl border bg-card p-4 shadow-soft transition hover:-translate-y-0.5"
+                className="flex items-center gap-3 rounded-3xl border bg-card p-3 shadow-soft transition hover:bg-accent/40"
               >
-                <div className="flex items-center gap-4">
-                  <ProfileCard
-                    p={d.profile}
-                    photo={d.photo ? urls[d.photo] : undefined}
-                    action={
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56">
-                          <DropdownMenuItem asChild>
-                            <Link to="/profile/$username" params={{ username: profileUsername }}>
-                              <User className="h-4 w-4 mr-2" /> View Profile
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setReportTargetId(d.profile.id);
-                              setReportTargetName(d.profile.display_name);
-                              setReportOpen(true);
-                            }}
-                          >
-                            <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => {
-                              if (confirm("Unmatch? This will delete the conversation.")) {
-                                supabase
-                                  .from("connections")
-                                  .delete()
-                                  .eq("id", d.connection.id)
-                                  .then(() => {
-                                    toast.success("Unmatched");
-                                    qc.invalidateQueries({ queryKey: ["inbox"] });
-                                    qc.invalidateQueries({ queryKey: ["connections"] });
-                                  });
-                              }
-                            }}
-                          >
-                            <UserX className="h-4 w-4 mr-2 text-destructive" /> Unmatch
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    }
-                    to="/profile/$username"
-                    toParams={{ username: profileUsername }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold truncate">{d.profile.display_name}</p>
-                      {d.lastMessage && d.lastMessage.sender !== uid && !d.lastMessage.read_at && (
-                        <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-                          1
-                        </span>
-                      )}
-                    </div>
-                    {d.lastMessage && (
-                      <p className="text-sm text-muted-foreground truncate max-w-[400px]">
-                        {d.lastMessage.body ??
-                          (d.lastMessage.attachment_path ? "📎 Attachment" : "")}
-                      </p>
+                {/* Avatar — opens profile */}
+                <Link
+                  to="/profile/$username"
+                  params={{ username: profileUsername }}
+                  className="relative h-14 w-14 shrink-0"
+                  aria-label={`View ${d.profile.display_name}'s profile`}
+                >
+                  <div className="h-14 w-14 overflow-hidden rounded-full bg-muted">
+                    {d.photo && urls[d.photo] ? (
+                      <img
+                        src={urls[d.photo]}
+                        alt={d.profile.display_name}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-full items-center justify-center text-lg font-semibold">
+                        {d.profile.display_name?.[0]}
+                      </span>
                     )}
                   </div>
-                  <Button asChild variant="ghost" className="ml-auto">
-                    <Link to="/chat/$id" params={{ id: d.connection.id }}>
-                      <MessageCircle className="h-5 w-5" />
+                  {d.isOnline && (
+                    <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-card bg-green-500" />
+                  )}
+                </Link>
+
+                {/* Name + last message — name opens profile, rest opens chat */}
+                <Link to="/chat/$id" params={{ id: d.connection.id }} className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to="/profile/$username"
+                      params={{ username: profileUsername }}
+                      className="truncate font-semibold hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {d.profile.display_name}
                     </Link>
-                  </Button>
-                </div>
+                    {isFavorite && (
+                      <Star className="h-3.5 w-3.5 shrink-0 fill-yellow-400 text-yellow-400" />
+                    )}
+                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                      {d.lastMessage
+                        ? new Date(d.lastMessage.created_at).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : ""}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm text-muted-foreground">
+                      {d.lastMessage
+                        ? (d.lastMessage.body ??
+                          (d.lastMessage.attachment_path ? "📎 Attachment" : ""))
+                        : "Say hi 👋"}
+                    </p>
+                    {unread > 0 && (
+                      <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    )}
+                  </div>
+                </Link>
+
+                {/* Three-dots menu */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem asChild>
+                      <Link to="/profile/$username" params={{ username: profileUsername }}>
+                        <User className="h-4 w-4 mr-2" /> View profile
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => toggleFavorite(d.connection.id)}>
+                      <Star
+                        className={`h-4 w-4 mr-2 ${isFavorite ? "fill-yellow-400 text-yellow-400" : ""}`}
+                      />
+                      {isFavorite ? "Remove from favorites" : "Add to favorites"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setReportTargetId(d.profile.id);
+                        setReportTargetName(d.profile.display_name);
+                        setReportOpen(true);
+                      }}
+                    >
+                      <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (confirm("Unmatch? This will delete the conversation.")) {
+                          supabase
+                            .from("connections")
+                            .delete()
+                            .eq("id", d.connection.id)
+                            .then(() => {
+                              toast.success("Unmatched");
+                              qc.invalidateQueries({ queryKey: ["inbox"] });
+                              qc.invalidateQueries({ queryKey: ["connections"] });
+                            });
+                        }
+                      }}
+                    >
+                      <UserX className="h-4 w-4 mr-2 text-destructive" /> Unmatch
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             );
           })}
