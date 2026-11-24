@@ -4,7 +4,10 @@ import { Link } from "@tanstack/react-router";
 import { ageOf, useCoverPhoto, type Profile, type PublicProfile } from "@/lib/data";
 import { usePresence } from "@/lib/presence";
 
-type ProfileLike = Pick<Profile, "id" | "display_name" | "gender" | "orientation" | "city" | "country"> & {
+type ProfileLike = Pick<
+  Profile,
+  "id" | "display_name" | "gender" | "orientation" | "city" | "country"
+> & {
   age?: number | null;
   birthdate?: string | null;
   verified?: boolean | null;
