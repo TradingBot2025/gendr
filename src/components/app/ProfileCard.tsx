@@ -31,15 +31,10 @@ export function ProfileCard({
   const cover = useCoverPhoto(p.id);
   const image = cover.url ?? (!cover.blurred ? photo : undefined);
   const presence = usePresence();
-  // Live presence (accurate "now") OR the stored flags as a fallback (they start
-  // working once the DB grant is applied). is_online/last_seen_at can be stale
-  // when the app can't write them, so presence is the primary signal.
-  const lastSeen =
-    "last_seen_at" in p ? (p as { last_seen_at?: string | null }).last_seen_at : null;
-  const isOnline =
-    presence.isOnline(p.id) ||
-    ("is_online" in p ? !!p.is_online : false) ||
-    (!!lastSeen && Date.now() - new Date(lastSeen).getTime() < 5 * 60 * 1000);
+  // Live presence from Supabase Realtime (accurate "now"). The old DB
+  // is_online/last_seen_at columns were never writable by users, so they're not
+  // used here.
+  const isOnline = presence.isOnline(p.id);
 
   const cardContent = (
     <>

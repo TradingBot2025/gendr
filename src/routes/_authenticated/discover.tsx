@@ -11,7 +11,6 @@ import {
   logProfileView,
   useProfileViews,
 } from "@/lib/data";
-import { notifyUser } from "@/lib/push-notify";
 import { ProfileCard } from "@/components/app/ProfileCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,18 +101,6 @@ function Discover() {
   // Viewed profiles tab
   const viewed = useProfileViews();
 
-  // Mark online
-  useEffect(() => {
-    const markOnline = () =>
-      supabase
-        .from("profiles")
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq("id", me?.user.id ?? "");
-    markOnline();
-    const iv = setInterval(markOnline, 60000);
-    return () => clearInterval(iv);
-  }, [me]);
-
   const connect = async (id: string) => {
     await logProfileView(id);
     const { error } = await supabase
@@ -126,12 +113,6 @@ function Discover() {
     toast.success("Request sent — waiting for their response");
     refetch();
     qc.invalidateQueries({ queryKey: ["discover"] });
-    void notifyUser(id, {
-      title: me?.profile?.display_name ?? "Someone",
-      body: "sent you a connection request",
-      url: "/connections",
-      tag: "conn-request",
-    });
   };
 
   const respond = async (cid: string, status: "accepted" | "declined") => {

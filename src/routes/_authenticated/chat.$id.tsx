@@ -29,7 +29,6 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos, type Message } from "@/lib/data";
-import { notifyUser } from "@/lib/push-notify";
 import { CallAvailability } from "@/components/app/CallAvailability";
 import { usePresence } from "@/lib/presence";
 import { useCall } from "@/lib/calls";
@@ -352,11 +351,10 @@ function Chat() {
     );
   if (!info || !uid) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
   const name = info.peer?.display_name ?? "Match";
-  const peerFlags = info.peer as
-    { voice_call_enabled?: boolean; video_call_enabled?: boolean } | null | undefined;
-  const peerVoice = !!peerFlags?.voice_call_enabled;
-  const peerVideo = !!peerFlags?.video_call_enabled;
-  const peerOnline = presence.isOnline(info.pid) || !!info.peer?.is_online;
+  const peerPresence = presence.getPresence(info.pid);
+  const peerVoice = peerPresence.voice;
+  const peerVideo = peerPresence.video;
+  const peerOnline = peerPresence.online;
   const disappearSeconds = info.disappearSeconds ?? 86400;
   const disappearLabel = formatDisappear(disappearSeconds) ?? "24 hours";
 
@@ -384,14 +382,6 @@ function Chat() {
     });
     if (error) toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["messages", id] });
-    // Let the recipient's device show a native notification even if the app is
-    // closed (best-effort; ignores when push isn't configured).
-    void notifyUser(info.pid, {
-      title: me?.profile?.display_name ?? "New message",
-      body: fields.body ?? (fields.attachment_path ? "📎 Sent an attachment" : "New message"),
-      url: `/chat/${id}`,
-      tag: `msg-${Date.now()}`,
-    });
   };
 
   const setChatTimer = async (seconds: number) => {

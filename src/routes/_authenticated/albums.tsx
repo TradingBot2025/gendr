@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned } from "@/lib/data";
-import { notifyUser } from "@/lib/push-notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -212,17 +211,6 @@ function Albums() {
     else {
       toast.success(status === "approved" ? "Album access approved" : "Album access removed");
       void qc.invalidateQueries({ queryKey: ["album-access"] });
-      if (status === "approved") {
-        const req = access.find((a) => a.id === id) as { requester_id?: string } | undefined;
-        if (req?.requester_id) {
-          void notifyUser(req.requester_id, {
-            title: me?.profile?.display_name ?? "Someone",
-            body: "approved your album access request",
-            url: "/albums",
-            tag: "album-approved",
-          });
-        }
-      }
     }
   };
   if (!me) return null;

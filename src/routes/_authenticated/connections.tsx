@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, type Profile } from "@/lib/data";
-import { notifyUser } from "@/lib/push-notify";
 import { ProfileCard } from "@/components/app/ProfileCard";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -155,17 +154,6 @@ function Connections() {
     else {
       toast.success(status === "accepted" ? "It's a match!" : "Request declined");
       refresh();
-      if (status === "accepted") {
-        const entry = (data ?? []).find((d) => d.c.id === id);
-        if (entry) {
-          void notifyUser(entry.c.requester, {
-            title: me?.profile?.display_name ?? "Someone",
-            body: "accepted your connection request",
-            url: `/chat/${id}`,
-            tag: "conn-accepted",
-          });
-        }
-      }
     }
   };
   const remove = async (id: string) => {

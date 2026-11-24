@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { Bell, BellRing, BellOff } from "lucide-react";
+import { Bell, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   enableNotifications,
   notificationPermission,
-  isWebPushConfigured,
   type NotificationPermissionLike,
 } from "@/lib/push";
 
@@ -25,17 +24,11 @@ export function NotificationsToggle() {
       const result = await enableNotifications();
       setPerm(notificationPermission());
       if (result === "granted") {
-        toast.success(
-          isWebPushConfigured()
-            ? "Notifications enabled on this device"
-            : "Notifications enabled for this session",
-        );
+        toast.success("Notifications enabled on this device");
       } else if (result === "denied") {
         toast.error("Notifications were blocked. Enable them in your browser settings.");
       } else if (result === "unsupported") {
         toast.error("This browser doesn't support notifications here.");
-      } else if (result === "subscribe-failed") {
-        toast.error("Couldn't subscribe to push. Try again later.");
       }
     } finally {
       setBusy(false);

@@ -149,29 +149,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     [navigate],
   );
 
-  // Keep online status up to date
-  useEffect(() => {
-    if (!uid) return;
-    const update = () => {
-      void supabase
-        .from("profiles")
-        .update({ is_online: !document.hidden, last_seen_at: new Date().toISOString() })
-        .eq("id", uid);
-    };
-    update();
-    const timer = setInterval(update, 60000);
-    document.addEventListener("visibilitychange", update);
-    const handleUnload = () => {
-      void supabase.from("profiles").update({ is_online: false }).eq("id", uid);
-    };
-    window.addEventListener("beforeunload", handleUnload);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", update);
-      window.removeEventListener("beforeunload", handleUnload);
-    };
-  }, [uid]);
-
   // Real-time notifications via Postgres changes. Each handler funnels through
   // emit() so it benefits from the same dedup + background dispatch as polling.
   useEffect(() => {
@@ -337,10 +314,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     };
   }, [uid, qc, emit]);
 
-  // Polling fallback (every 8s) for when realtime is unavailable. Covers new
-  // messages, connection requests, matches and album-access requests. The first
-  // poll only establishes a baseline — it never notifies about pre-existing
-  // rows (this is the fix for the "old message notified on load" bug).
+  // Polling fallback for when realtime is unavailable. Realtime is the primary
+  // path; this is a safety net, so it runs less often to keep DB/client load low
+  // (the previous 8s interval made the app feel sluggish). The first poll only
+  // establishes a baseline — it never notifies about pre-existing rows (the
+  // "old message notified on load" fix).
   useEffect(() => {
     if (!uid) return;
     let stopped = false;
@@ -537,9 +515,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Run once immediately to prime the baseline, then every 8s.
+    // Run once immediately to prime the baseline, then every 20s.
     void poll();
-    const interval = setInterval(poll, 8000);
+    const interval = setInterval(poll, 20000);
     return () => {
       stopped = true;
       clearInterval(interval);

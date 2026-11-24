@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, type Profile } from "@/lib/data";
+import { usePresence } from "@/lib/presence";
 import { Button } from "@/components/ui/button";
 import {
   MessageCircle,
@@ -92,6 +93,7 @@ export const Route = createFileRoute("/_authenticated/messages")({
 function Messages() {
   const { data: me } = useMe();
   const uid = me?.user.id;
+  const presence = usePresence();
   const qc = useQueryClient();
   const [albumRequests, setAlbumRequests] = useState<
     Array<{
@@ -214,13 +216,6 @@ function Messages() {
             lastMessage: msg,
             photo: firstPhoto[pid],
             unreadCount: unreadCount[c.id] ?? 0,
-            // Treat as online if the flag is set, or if they were active in the last
-            // 5 minutes (is_online can be stale when a tab closes without firing the
-            // visibility handler, so last_seen_at is a more reliable fallback).
-            isOnline:
-              !!profile?.is_online ||
-              (!!profile?.last_seen_at &&
-                Date.now() - new Date(profile.last_seen_at).getTime() < 5 * 60 * 1000),
           };
         })
         .filter((x) => x.profile);
@@ -355,7 +350,7 @@ function Messages() {
   const filteredInbox = (inboxData ?? []).filter((d) => {
     if (filter === "unread") return d.unreadCount > 0;
     if (filter === "favorite") return favorites.has(d.connection.id);
-    if (filter === "online") return d.isOnline;
+    if (filter === "online") return d.profile ? presence.isOnline(d.profile.id) : false;
     return true;
   });
 
@@ -722,7 +717,7 @@ function Messages() {
                       </span>
                     )}
                   </div>
-                  {d.isOnline && (
+                  {presence.isOnline(d.profile.id) && (
                     <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-card bg-green-500" />
                   )}
                 </Link>
