@@ -1,8 +1,17 @@
-// Client-side helpers for app (PWA) notifications — no keys / no Web Push.
+// Client-side helpers for app (PWA) notifications.
 //
 // Background notifications while the tab is hidden/minimized are shown by the
 // service worker via postMessage (works with just the Notification permission).
-// This intentionally does NOT use the Push API / VAPID keys.
+// When the app is FULLY closed, delivery uses real Web Push (service worker +
+// push subscription stored in public.push_subscriptions + VAPID keys). The
+// private VAPID key lives server-side; only the public key is embedded here.
+
+import { supabase } from "@/integrations/supabase/client";
+
+// Public VAPID key — safe to ship to browsers. MUST match the server's
+// VAPID_PRIVATE_KEY (see src/lib/push.functions.ts).
+const VAPID_PUBLIC_KEY =
+  "BMMGlqGjJSf0yViJbY6jxi9BU8SiMt8UgVgAzeb0WELtwaGxNsZWAbhzmWPJwE8A0ez0Qza-lATl-tFQWlR_-Ug";
 
 const SW_URL = "/sw.js";
 
@@ -67,6 +76,56 @@ export async function enableNotifications(): Promise<"granted" | "denied" | "uns
   if (!isPushSupported()) return "unsupported";
   const permission = await Notification.requestPermission();
   return permission;
+}
+
+// --- Web Push (works even when the app is fully closed) ---
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+// Subscribe this device to Web Push (if permission is granted) and persist the
+// subscription in public.push_subscriptions so the server can push to it. Safe
+// to call repeatedly — it reuses an existing subscription and upserts by
+// endpoint. No-op (never throws) if push isn't supported or not permitted.
+export async function subscribeToPush(): Promise<void> {
+  if (!isPushSupported()) return;
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return;
+    const reg = await registerServiceWorker();
+    if (!reg || !("pushManager" in reg)) return;
+
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as unknown as BufferSource,
+      });
+    }
+    const json = sub.toJSON();
+    const endpoint = json.endpoint;
+    const keys = json.keys as { p256dh?: string; auth?: string } | undefined;
+    if (!endpoint || !keys?.p256dh || !keys?.auth) return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase
+      .from("push_subscriptions")
+      .upsert({ user_id: user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth } as never, {
+        onConflict: "endpoint",
+      });
+  } catch (err) {
+    console.warn("[push] subscribe failed:", err);
+  }
 }
 
 // Dismiss a previously shown background notification (e.g. when the user opens

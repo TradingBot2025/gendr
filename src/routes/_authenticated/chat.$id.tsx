@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos, blockUser, type Message } from "@/lib/data";
+import { sendPushToUser } from "@/lib/push.functions";
 
 import { usePresence } from "@/lib/presence";
 import { useCall } from "@/lib/calls";
@@ -392,6 +393,25 @@ function Chat() {
       ...rest,
     });
     if (error) toast.error(error.message);
+    else {
+      // Notify the recipient even if their app is fully closed (Web Push). The
+      // server function no-ops if push isn't configured on this deployment, and
+      // is best-effort: never block sending a message on it.
+      const preview = fields.body?.trim()
+        ? fields.body.trim().slice(0, 120)
+        : fields.attachment_type === "image"
+          ? "Sent a photo"
+          : "Sent an attachment";
+      void sendPushToUser({
+        data: {
+          to: info.pid,
+          title: me?.profile?.display_name || "New message",
+          body: preview,
+          url: `/chat/${id}`,
+          tag: `msg-${id}`,
+        },
+      }).catch(() => {});
+    }
     qc.invalidateQueries({ queryKey: ["messages", id] });
   };
 

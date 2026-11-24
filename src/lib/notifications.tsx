@@ -11,7 +11,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
-import { registerServiceWorker, showBackgroundNotification } from "@/lib/push";
+import { registerServiceWorker, showBackgroundNotification, subscribeToPush } from "@/lib/push";
 import { toast } from "sonner";
 
 export type NotificationType =
@@ -78,10 +78,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const albumSeen = useRef<Set<string> | null>(null);
 
   // Register the service worker so background notifications and (when
-  // configured) Web Push work.
+  // configured) Web Push work. If the user already granted notification
+  // permission, (re)subscribe this device to Web Push so closed-app pushes work.
   useEffect(() => {
     if (!uid) return;
     void registerServiceWorker();
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      void subscribeToPush();
+    }
   }, [uid]);
 
   // Count unread DB messages
