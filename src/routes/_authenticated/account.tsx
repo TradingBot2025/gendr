@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NotificationsToggle } from "@/components/app/NotificationsToggle";
+import { BlockedContacts } from "@/components/app/BlockedContacts";
 
 export const Route = createFileRoute("/_authenticated/account")({
   head: () => ({
@@ -117,6 +118,8 @@ function Account() {
       </section>
 
       <NotificationsToggle />
+
+      <BlockedContacts />
 
       {/* Verification */}
       <section className="rounded-3xl border bg-card p-6 shadow-soft">

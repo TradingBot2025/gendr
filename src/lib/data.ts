@@ -261,7 +261,7 @@ export function useReports() {
       const { data } = await supabase
         .from("reports")
         .select(
-          "*, reporter:profiles!reports_reporter_id_fkey(display_name), reported:profiles!reports_reported_id_fkey(display_name)",
+          "*, reporter:profiles!reports_reporter_id_fkey(display_name,username), reported:profiles!reports_reported_id_fkey(display_name,username)",
         )
         .order("created_at", { ascending: false });
       return data ?? [];
@@ -362,6 +362,67 @@ export async function adminRecordAction(
     details: details ?? null,
   });
   if (error) throw error;
+}
+
+/* ---------- Blocking ---------- */
+// Requires the public.blocked_users table (see MIGRATIONS TO APPLY). Fails
+// gracefully with a thrown error the caller can toast if the table is missing.
+
+export async function blockUser(blockedId: string) {
+  const uid = await currentUserId();
+  if (blockedId === uid) return;
+  // Remove any existing connection so the blocked person can't keep messaging
+  // or calling from an already-open chat.
+  await supabase
+    .from("connections")
+    .delete()
+    .or(
+      `and(requester.eq.${uid},addressee.eq.${blockedId}),and(requester.eq.${blockedId},addressee.eq.${uid})`,
+    );
+  const { error } = await supabase
+    .from("blocked_users")
+    .insert({ blocker_id: uid, blocked_id: blockedId } as never);
+  if (error) throw error;
+}
+
+export async function unblockUser(blockedId: string) {
+  const uid = await currentUserId();
+  const { error } = await supabase
+    .from("blocked_users")
+    .delete()
+    .eq("blocker_id", uid)
+    .eq("blocked_id", blockedId);
+  if (error) throw error;
+}
+
+export function useBlockedContacts() {
+  const { data: me } = useMe();
+  return useQuery({
+    queryKey: ["blocked-contacts", me?.user.id],
+    enabled: !!me,
+    queryFn: async () => {
+      const { data: blocks } = await supabase
+        .from("blocked_users")
+        .select("blocked_id, created_at")
+        .order("created_at", { ascending: false });
+      const rows = (blocks ?? []) as Array<{ blocked_id: string; created_at: string }>;
+      if (!rows.length)
+        return [] as Array<{
+          blocked_id: string;
+          created_at: string;
+          profile: PublicProfile | null;
+        }>;
+      const ids = rows.map((b) => b.blocked_id);
+      const { data: profiles } = await supabase
+        .from("public_profiles")
+        .select("id,username,display_name")
+        .in("id", ids);
+      const byId = new Map((profiles ?? []).map((p) => [p.id, p as unknown as PublicProfile]));
+      return rows
+        .map((r) => ({ ...r, profile: byId.get(r.blocked_id) ?? null }))
+        .filter((x) => x.profile !== null);
+    },
+  });
 }
 
 export function useCoverPhoto(userId: string) {

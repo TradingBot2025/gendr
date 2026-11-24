@@ -28,7 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useMe, useSigned, useMyAlbumsWithPhotos, type Message } from "@/lib/data";
+import { useMe, useSigned, useMyAlbumsWithPhotos, blockUser, type Message } from "@/lib/data";
 
 import { usePresence } from "@/lib/presence";
 import { useCall } from "@/lib/calls";
@@ -695,6 +695,24 @@ function Chat() {
               }}
             >
               <Flag className="h-4 w-4 mr-2 text-destructive" /> Report
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                if (confirm("Block this user? They won't be able to message or call you.")) {
+                  blockUser(info.pid)
+                    .then(() => {
+                      toast.success("User blocked");
+                      qc.invalidateQueries({ queryKey: ["inbox"] });
+                      qc.invalidateQueries({ queryKey: ["blocked-contacts"] });
+                      void navigate({ to: "/connections" });
+                    })
+                    .catch((e) =>
+                      toast.error(e instanceof Error ? e.message : "Couldn't block user"),
+                    );
+                }
+              }}
+            >
+              <UserX className="h-4 w-4 mr-2 text-destructive" /> Block
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

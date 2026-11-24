@@ -24,7 +24,7 @@ import {
   UserX,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useMe, useSigned, logProfileView, reportProfile } from "@/lib/data";
+import { useMe, useSigned, logProfileView, reportProfile, blockUser } from "@/lib/data";
 import { useCall } from "@/lib/calls";
 import { usePresence } from "@/lib/presence";
 import { Button } from "@/components/ui/button";
@@ -362,12 +362,25 @@ function ProfileView() {
     }
     setReporting(true);
     try {
+      // Upload the optional proof screenshot so admins can review it.
+      let proofFilePath: string | null = null;
+      if (reportProof) {
+        const path = `${uid}/${crypto.randomUUID()}.${reportProof.name.split(".").pop() ?? "jpg"}`;
+        const { error: upErr } = await supabase.storage
+          .from("report-proofs")
+          .upload(path, reportProof, { contentType: reportProof.type });
+        if (!upErr) proofFilePath = path;
+      }
       await reportProfile(p.id, reportDescription.trim(), {
         reasonCategory: reportReason,
         proofText: reportDescription.trim(),
-        proofFilePath: null,
+        proofFilePath,
         autoBlock: blockAfterReport,
       });
+      if (blockAfterReport) {
+        // Record a real block too (best-effort; needs the blocked_users table).
+        blockUser(p.id).catch(() => {});
+      }
 
       toast.success("Report submitted" + (blockAfterReport ? " and user blocked" : ""));
       setReportOpen(false);
@@ -493,9 +506,20 @@ function ProfileView() {
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => {
-                          setReportReason("harassment");
-                          setBlockAfterReport(true);
-                          setReportOpen(true);
+                          if (
+                            confirm(
+                              `Block ${p.display_name}? They won't be able to message or call you. You can unblock later from Account settings.`,
+                            )
+                          ) {
+                            blockUser(p.id)
+                              .then(() => {
+                                toast.success("User blocked");
+                                void navigate({ to: "/connections" });
+                              })
+                              .catch((e) =>
+                                toast.error(e instanceof Error ? e.message : "Couldn't block user"),
+                              );
+                          }
                         }}
                       >
                         <UserX className="h-4 w-4 mr-2 text-destructive" /> Block
