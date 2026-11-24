@@ -128,7 +128,7 @@ function Connections() {
               .in("user_id", ids)
               .order("position"),
           ])
-        : [{ data: [] as Profile[] }, { data: [] as { user_id: string; path: string }[] }];
+        : [{ data: [] }, { data: [] as { user_id: string; path: string }[] }];
       const first: Record<string, string> = {};
       photos?.forEach((p) => {
         if (!first[p.user_id]) first[p.user_id] = p.path;
@@ -136,7 +136,7 @@ function Connections() {
       return (conns ?? []).flatMap((c) => {
         const pid = c.requester === uid ? c.addressee : c.requester;
         const p = profiles?.find((x) => x.id === pid);
-        return p ? [{ c, p, photo: first[pid] }] : [];
+        return p?.id ? [{ c, p: { ...p, id: p.id }, photo: first[pid] }] : [];
       });
     },
   });

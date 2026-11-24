@@ -336,7 +336,7 @@ export function CallProvider({
   useEffect(() => {
     // Use private channel for receiving - only authenticated user can subscribe
     const ch = supabase
-      .channel(`private-call-${userId}`)
+      .channel(`private-call-${userId}`, { config: { private: true } })
       .on("broadcast", { event: "signal" }, ({ payload }) => handler.current(payload as Signal))
       .subscribe();
     return () => {
@@ -403,6 +403,7 @@ export function CallProvider({
       if (outputs.length < 2) return;
       const nextOn = !speakerOn;
       const target = outputs[nextOn ? 1 % outputs.length : 0];
+      if (!target) return;
       await el.setSinkId(target.deviceId);
       setSpeakerOn(nextOn);
     } catch {

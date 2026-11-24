@@ -29,7 +29,7 @@ type SubRow = { endpoint: string; p256dh: string; auth: string };
  */
 export const sendPushToUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator(PayloadSchema)
+  .inputValidator(PayloadSchema)
   .handler(async ({ data, context }) => {
     const { to, title, body, url, tag } = data;
 

@@ -204,13 +204,14 @@ function Messages() {
       });
 
       return myConns
-        .map((c) => {
+        .flatMap((c) => {
           const pid = c.requester === uid ? c.addressee : c.requester;
           const profile = profiles?.find((p) => p.id === pid);
+          if (!profile?.id) return [];
           const msg = latestMsg[c.id];
-          return {
+          return [{
             connection: c,
-            profile,
+            profile: { ...profile, id: profile.id },
             lastMessage: msg,
             photo: firstPhoto[pid],
             unreadCount: unreadCount[c.id] ?? 0,
@@ -221,9 +222,9 @@ function Messages() {
               !!profile?.is_online ||
               (!!profile?.last_seen_at &&
                 Date.now() - new Date(profile.last_seen_at).getTime() < 5 * 60 * 1000),
-          };
+          }];
         })
-        .filter((x) => x.profile);
+        ;
     },
   });
 

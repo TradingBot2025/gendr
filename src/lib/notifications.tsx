@@ -132,7 +132,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           action: n.actionUrl
             ? {
                 label: n.actionLabel ?? "Open",
-                onClick: () => void navigate(n.actionUrl as string),
+                onClick: () => void navigate({ to: n.actionUrl }),
               }
             : undefined,
           duration: 8000,
@@ -141,7 +141,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         void showBackgroundNotification({
           title: n.title,
           body: n.body,
-          url: n.actionUrl,
+          ...(n.actionUrl ? { url: n.actionUrl } : {}),
           tag: n.id,
         });
       }

@@ -30,6 +30,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos, type Message } from "@/lib/data";
 import { notifyUser } from "@/lib/push-notify";
+import { chatPhotos } from "@/lib/chat-photos";
 import { CallAvailability } from "@/components/app/CallAvailability";
 import { usePresence } from "@/lib/presence";
 import { useCall } from "@/lib/calls";
@@ -220,6 +221,7 @@ function Chat() {
   const [photoViewerPhotos, setPhotoViewerPhotos] = useState<Array<{
     id: string;
     path: string;
+    album_id: string | null;
     attachment_type?: string;
   }> | null>(null);
   const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
@@ -253,6 +255,7 @@ function Chat() {
   const { data: info } = useQuery({
     queryKey: ["chat-info", id],
     enabled: !!uid,
+    refetchInterval: 5000,
     queryFn: async () => {
       const { data: c } = await supabase.from("connections").select("*").eq("id", id).maybeSingle();
       if (!c || c.status !== "accepted") return null;
@@ -550,11 +553,7 @@ function Chat() {
           aurls[msg.attachment_path],
       );
       setPhotoViewerPhotos(
-        imageMsgs.map((msg) => ({
-          id: msg.id,
-          path: msg.attachment_path,
-          attachment_type: msg.attachment_type,
-        })),
+        chatPhotos(imageMsgs, aurls),
       );
       const idx = imageMsgs.findIndex((msg) => msg.id === m.id);
       setPhotoViewerIndex(idx >= 0 ? idx : 0);
@@ -851,11 +850,7 @@ function Chat() {
                                       aurls[msg.attachment_path],
                                   );
                                   setPhotoViewerPhotos(
-                                    imageMsgs.map((msg) => ({
-                                      id: msg.id,
-                                      path: msg.attachment_path,
-                                      attachment_type: msg.attachment_type,
-                                    })),
+                                    chatPhotos(imageMsgs, aurls),
                                   );
                                   const idx = imageMsgs.findIndex((msg) => msg.id === m.id);
                                   setPhotoViewerIndex(idx >= 0 ? idx : 0);

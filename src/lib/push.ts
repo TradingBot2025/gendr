@@ -54,7 +54,7 @@ export async function showBackgroundNotification(opts: {
 }): Promise<void> {
   const { title, body, url = "/", tag } = opts;
   const reg = await registerServiceWorker();
-  const base = { body, icon: "/icon-192.png", badge: "/icon-192.png", tag, data: { url } };
+  const base = { ...(body !== undefined ? { body } : {}), icon: "/icon-192.png", badge: "/icon-192.png", ...(tag !== undefined ? { tag } : {}), data: { url } };
   try {
     if (reg && "showNotification" in reg) {
       await reg.showNotification(title, base);
@@ -70,7 +70,7 @@ export async function showBackgroundNotification(opts: {
   }
 }
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const raw = atob(base64);
@@ -113,7 +113,11 @@ export async function enableNotifications(): Promise<
       }));
     // Persist the subscription so the backend can target this device.
     const { savePushSubscription } = await import("@/lib/push-subscription.functions");
-    await savePushSubscription({ data: { subscription: sub.toJSON() } });
+    const subscription = sub.toJSON();
+    const p256dh = subscription.keys?.["p256dh"];
+    const auth = subscription.keys?.["auth"];
+    if (!subscription.endpoint || !p256dh || !auth) return "subscribe-failed";
+    await savePushSubscription({ data: { endpoint: subscription.endpoint, keys: { p256dh, auth } } });
     return "granted";
   } catch (err) {
     console.warn("[PWA] push subscription failed:", err);

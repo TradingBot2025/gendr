@@ -100,15 +100,6 @@ const REPORT_REASONS = [
 
 // Base public profile columns from the public_profiles view (readable by all
 // authenticated users). Uses age directly (not birthdate) since the view exposes age.
-const BASE_PROFILE_COLUMNS =
-  "id,username,display_name,gender,orientation,age,city,country,bio,looking_for,verified,last_seen_at,created_at,is_online";
-// Extended profile columns (migration 0006 added them to the profiles table). They
-// are only present in the public_profiles view after the view is recreated to include
-// them (see MIGRATIONS TO APPLY). We try them first and gracefully fall back to the
-// base columns if the view does not expose them yet.
-const EXTENDED_PROFILE_COLUMNS = "height,weight,education,children,marital_status";
-const PUBLIC_PROFILE_COLUMNS = `${BASE_PROFILE_COLUMNS},${EXTENDED_PROFILE_COLUMNS}`;
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function ProfileView() {
@@ -152,32 +143,18 @@ function ProfileView() {
     queryKey: ["profile-view", username],
     enabled: !!uid,
     queryFn: async () => {
+      if (!uid) return null;
       // Read other members from the public_profiles view (readable by all authenticated users).
       // The route param may be a username or, as a fallback for legacy profiles without a
       // username, the user's id (UUID).
       // Try the extended column set first; if the view doesn't expose those columns yet
       // (migration not applied to the view), fall back to the base columns.
-      const fetchBy = async (column: "username" | "id", value: string, cols: string) => {
-        const { data } = await supabase
-          .from("public_profiles")
-          .select(cols)
-          .eq(column, value)
-          .maybeSingle();
-        return data;
+      const fetchBy = async (column: "username" | "id", value: string) => {
+        const { data, error } = await supabase.from("public_profiles").select("*").eq(column, value).maybeSingle();
+        if (error) throw error;
+        return data?.id ? { ...data, id: data.id } : null;
       };
-
-      let p = await fetchBy("username", username, PUBLIC_PROFILE_COLUMNS);
-      // If extended columns failed (view not updated), `p` is null even for a valid
-      // username. Retry with base columns to distinguish "missing profile" from
-      // "missing columns".
-      if (!p) {
-        const base = await fetchBy("username", username, BASE_PROFILE_COLUMNS);
-        if (base) p = base;
-      }
-      if (!p && UUID_RE.test(username)) {
-        p = await fetchBy("id", username, PUBLIC_PROFILE_COLUMNS);
-        if (!p) p = await fetchBy("id", username, BASE_PROFILE_COLUMNS);
-      }
+      const p = await fetchBy(UUID_RE.test(username) ? "id" : "username", username);
 
       if (!p) return null;
 
@@ -193,19 +170,8 @@ function ProfileView() {
 
       // Whether this member has enabled voice / video calling. Read from the
       // profiles table (the public_profiles view doesn't expose these columns).
-      const { data: callRow } = await supabase
-        .from("profiles")
-        .select("voice_call_enabled, video_call_enabled")
-        .eq("id", p.id)
-        .maybeSingle();
-      const callFlagsRow = callRow as {
-        voice_call_enabled?: boolean;
-        video_call_enabled?: boolean;
-      } | null;
-      const callFlags = {
-        voice: !!callFlagsRow?.voice_call_enabled,
-        video: !!callFlagsRow?.video_call_enabled,
-      };
+      const { data: callRows } = await supabase.rpc("get_call_settings", { _user_id: p.id });
+      const callFlags = { voice: !!callRows?.[0]?.voice_call_enabled, video: !!callRows?.[0]?.video_call_enabled };
 
       const { data: allPhotos } = await supabase
         .from("photos")
@@ -235,7 +201,7 @@ function ProfileView() {
       (allPhotos ?? []).forEach((ph) => {
         const k = ph.album_id ?? "none";
         if (!photosByAlbum[k]) photosByAlbum[k] = [];
-        photosByAlbum[k].push(ph);
+        photosByAlbum[k]?.push(ph);
       });
 
       const albumsWithPhotos = (allAlbums ?? []).map((a) => ({
@@ -276,7 +242,7 @@ function ProfileView() {
   // If someone opens their own /profile/<self>, send them to the editor.
   useEffect(() => {
     if (profile?.profile && profile.profile.id === uid) {
-      void navigate({ to: "/profile/" });
+      void navigate({ to: "/profile" });
     }
   }, [profile, uid, navigate]);
 
@@ -302,15 +268,14 @@ function ProfileView() {
   const allVisiblePrivate =
     visiblePhotos.length > 0 &&
     visiblePhotos.every((ph: { is_private: boolean }) => ph.is_private === true);
-  const showMainBlur = !isConnected && allVisiblePrivate && profile.profile?.id !== uid;
+  const showMainBlur = !isConnected && allVisiblePrivate && profile?.profile?.id !== uid;
 
   const privateAlbumWithPhotos = albums.find(
-    (a: { is_private: boolean; photos?: { length: number }[] }) =>
-      a.is_private && a.photos?.length > 0,
+    (a) => a.is_private && a.photos.length > 0,
   );
   const fallbackMainPhoto = privateAlbumWithPhotos?.photos?.[0];
   const showFallbackBlur =
-    !isConnected && !hasMainPhotos && fallbackMainPhoto && profile.profile?.id !== uid;
+    !isConnected && !hasMainPhotos && fallbackMainPhoto && profile?.profile?.id !== uid;
 
   // Photos we are allowed to render: visible (public, or all when connected) main photos,
   // plus album photos the viewer may open (approved private albums only — even connected
@@ -337,7 +302,7 @@ function ProfileView() {
 
   const p = profile?.profile;
 
-  if (!me || profileLoading)
+  if (!me || !uid || profileLoading)
     return <div className="flex h-screen items-center justify-center">Loading…</div>;
   if (profileError)
     return <div className="p-8 text-center text-muted-foreground">Failed to load profile.</div>;
@@ -359,7 +324,7 @@ function ProfileView() {
       await reportProfile(p.id, reportDescription.trim(), {
         reasonCategory: reportReason,
         proofText: reportDescription.trim(),
-        proofFilePath: null,
+        
         autoBlock: blockAfterReport,
       });
 
@@ -791,7 +756,7 @@ function ProfileView() {
                       <Button
                         variant="outline"
                         className="h-11 w-11 shrink-0 rounded-full"
-                        onClick={() => call.start(p.id, p.display_name, false)}
+                        onClick={() => call.start(p.id, p.display_name ?? "Someone", false)}
                         aria-label="Voice call"
                         disabled={!profile.callFlags.voice}
                         title={profile.callFlags.voice ? "Voice call" : "Voice calls are off"}
@@ -801,7 +766,7 @@ function ProfileView() {
                       <Button
                         variant="outline"
                         className="h-11 w-11 shrink-0 rounded-full"
-                        onClick={() => call.start(p.id, p.display_name, true)}
+                        onClick={() => call.start(p.id, p.display_name ?? "Someone", true)}
                         aria-label="Video call"
                         disabled={!profile.callFlags.video}
                         title={profile.callFlags.video ? "Video call" : "Video calls are off"}
@@ -937,7 +902,7 @@ function ProfileView() {
                     (album: {
                       id: string;
                       is_private: boolean;
-                      photos?: { path: string; preview_path?: string }[];
+                      photos?: { path: string; preview_path?: string | null }[];
                       name: string;
                     }) => {
                       const albumPhotos = album.photos ?? [];

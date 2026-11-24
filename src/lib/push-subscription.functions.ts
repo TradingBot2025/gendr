@@ -17,7 +17,7 @@ const SubscriptionSchema = z.object({
 // Requires the `public.push_subscriptions` table — see MIGRATIONS TO APPLY.
 export const savePushSubscription = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator(SubscriptionSchema)
+  .inputValidator(SubscriptionSchema)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { endpoint, keys } = data;
