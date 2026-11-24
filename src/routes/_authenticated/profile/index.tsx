@@ -9,6 +9,7 @@ import {
   Star,
   Trash2,
   Lock,
+  Globe,
   Clock,
   Plus,
   MapPin,
@@ -408,6 +409,53 @@ function ProfilePage() {
     qc.invalidateQueries({ queryKey: ["photo-covers"] });
   };
 
+  // One-click toggle on a photo: move it between the public main album
+  // (album_id = null) and a private album. When making it private, use the album
+  // selected as the upload destination if any, else the first private album, else
+  // create a "Private Photos" album.
+  const movePhotoToPrivacy = async (
+    photo: { id: string; album_id: string | null },
+    makePrivate: boolean,
+  ) => {
+    if (!me) return;
+    let albumId: string | null = null;
+    if (makePrivate) {
+      if (uploadAlbum) {
+        albumId = uploadAlbum;
+      } else {
+        const existing = (albums ?? []).find((a) => a.user_id === me.user.id);
+        if (existing) {
+          albumId = existing.id;
+        } else {
+          const { data, error } = await supabase
+            .from("photo_albums")
+            .insert({ user_id: me.user.id, name: "Private Photos", is_private: true })
+            .select("id")
+            .single();
+          if (error || !data) {
+            toast.error(error?.message ?? "Could not create a private album");
+            return;
+          }
+          albumId = data.id;
+          qc.invalidateQueries({ queryKey: ["photo-albums"] });
+          qc.invalidateQueries({ queryKey: ["albums"] });
+        }
+      }
+    }
+    const { error } = await supabase
+      .from("photos")
+      .update({ album_id: albumId })
+      .eq("id", photo.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(makePrivate ? "Moved to private album" : "Moved to main (public)");
+    refresh();
+    qc.invalidateQueries({ queryKey: ["photo-covers"] });
+    qc.invalidateQueries({ queryKey: ["albums"] });
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-8 p-4 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -520,6 +568,16 @@ function ProfilePage() {
                   <Clock className="h-3 w-3" /> {p.view_timer}
                 </span>
               )}
+              <Button
+                size="icon"
+                variant={p.album_id ? "secondary" : "default"}
+                className="absolute right-2 top-2 h-7 w-7"
+                onClick={() => movePhotoToPrivacy(p, !p.album_id)}
+                aria-label={p.album_id ? "Make public (move to main)" : "Make private"}
+                title={p.album_id ? "Make public" : "Make private"}
+              >
+                {p.album_id ? <Lock className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}
+              </Button>
               <div className="absolute inset-x-2 bottom-2 flex justify-end gap-2">
                 {i > 0 && (
                   <Button
