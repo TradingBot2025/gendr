@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import webpush from "web-push";
 
 const PayloadSchema = z.object({
   to: z.string().uuid(),
@@ -47,6 +46,7 @@ export const sendPushToUser = createServerFn({ method: "POST" })
     }
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const webpush = (await import("web-push")).default;
 
     // Typed accessor for the push_subscriptions table (not yet in generated
     // types). The service-role client bypasses RLS so we can read the

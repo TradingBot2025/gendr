@@ -43,7 +43,9 @@ export function CallAvailability({ className = "" }: { className?: string }) {
     setBusy(null);
     if (error) {
       setFlags(prev);
-      toast.error(error.message);
+      // Don't surface raw PostgREST/schema errors (e.g. column not yet applied).
+      console.error("[call-availability] update failed:", error.message);
+      toast.error("Couldn't update call availability. Please try again.");
       return;
     }
     toast.success(

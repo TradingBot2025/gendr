@@ -11,6 +11,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { sendCallSignal, getTurnCredentials } from "@/lib/call-signalling.functions";
+import { notifyUser } from "@/lib/push-notify";
 
 type Signal = {
   type: "offer" | "answer" | "ice" | "hangup" | "decline";
@@ -242,6 +243,16 @@ export function CallProvider({
       // Include the caller's name so the recipient's incoming-call screen shows
       // who is calling (previously it always fell back to "Someone").
       await send(peerId, { type: "offer", sdp: offer, video, random, name: myName });
+      // Also send a push so the recipient sees "X is calling" even if the app is
+      // closed (skipped for random calls, which auto-connect anonymously).
+      if (!random) {
+        void notifyUser(peerId, {
+          title: myName || "Someone",
+          body: video ? "📹 is calling you (video)" : "📞 is calling you",
+          url: "/",
+          tag: "incoming-call",
+        });
+      }
     } catch {
       toast.error("Could not access microphone/camera");
       cleanup();
