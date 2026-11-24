@@ -2,6 +2,7 @@ import { BadgeCheck, MapPin, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ageOf, useCoverPhoto, type Profile, type PublicProfile } from "@/lib/data";
+import { usePresence } from "@/lib/presence";
 
 type ProfileLike = Profile | PublicProfile;
 
@@ -29,11 +30,14 @@ export function ProfileCard({
   const age = getAge(p);
   const cover = useCoverPhoto(p.id);
   const image = cover.url ?? (!cover.blurred ? photo : undefined);
-  // Consider a user online if the live flag is set OR they were active in the
-  // last 5 minutes (is_online can go stale when a tab closes abruptly).
+  const presence = usePresence();
+  // Live presence (accurate "now") OR the stored flags as a fallback (they start
+  // working once the DB grant is applied). is_online/last_seen_at can be stale
+  // when the app can't write them, so presence is the primary signal.
   const lastSeen =
     "last_seen_at" in p ? (p as { last_seen_at?: string | null }).last_seen_at : null;
   const isOnline =
+    presence.isOnline(p.id) ||
     ("is_online" in p ? !!p.is_online : false) ||
     (!!lastSeen && Date.now() - new Date(lastSeen).getTime() < 5 * 60 * 1000);
 

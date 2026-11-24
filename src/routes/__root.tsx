@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { NotificationProvider } from "@/lib/notifications";
+import { PresenceProvider } from "@/lib/presence";
 
 function NotFoundComponent() {
   return (
@@ -153,8 +154,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <NotificationProvider>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
+        <PresenceProvider>
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+        </PresenceProvider>
       </NotificationProvider>
       <Toaster richColors position="top-center" />
     </QueryClientProvider>

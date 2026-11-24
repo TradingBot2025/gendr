@@ -31,6 +31,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos, type Message } from "@/lib/data";
 import { notifyUser } from "@/lib/push-notify";
 import { CallAvailability } from "@/components/app/CallAvailability";
+import { usePresence } from "@/lib/presence";
 import { useCall } from "@/lib/calls";
 import {
   playNotificationSound,
@@ -187,6 +188,7 @@ function Chat() {
   const { data: me } = useMe();
   const uid = me?.user.id;
   const call = useCall();
+  const presence = usePresence();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [text, setText] = useState("");
@@ -354,6 +356,7 @@ function Chat() {
     { voice_call_enabled?: boolean; video_call_enabled?: boolean } | null | undefined;
   const peerVoice = !!peerFlags?.voice_call_enabled;
   const peerVideo = !!peerFlags?.video_call_enabled;
+  const peerOnline = presence.isOnline(info.pid) || !!info.peer?.is_online;
   const disappearSeconds = info.disappearSeconds ?? 86400;
   const disappearLabel = formatDisappear(disappearSeconds) ?? "24 hours";
 
@@ -584,23 +587,15 @@ function Chat() {
             )}
             <span
               className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card ${
-                info.peer?.is_online ||
-                (info.peer?.last_seen_at &&
-                  Date.now() - new Date(info.peer.last_seen_at).getTime() < 5 * 60 * 1000)
-                  ? "bg-green-500"
-                  : "bg-red-500"
+                peerOnline ? "bg-green-500" : "bg-red-500"
               }`}
-              aria-label={info.peer?.is_online ? "Online" : "Offline"}
+              aria-label={peerOnline ? "Online" : "Offline"}
             />
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate font-semibold">{name}</div>
             <div className="truncate text-[11px] text-muted-foreground">
-              {info.peer?.is_online
-                ? "Online"
-                : info.peer?.last_seen_at
-                  ? `Last seen ${new Date(info.peer.last_seen_at).toLocaleDateString()}`
-                  : `Messages disappear after ${disappearLabel}`}
+              {peerOnline ? "Online" : "Offline"}
             </div>
           </div>
         </Link>
