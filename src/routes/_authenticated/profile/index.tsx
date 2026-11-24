@@ -31,6 +31,7 @@ import {
   type PhotoAlbum,
 } from "@/lib/data";
 import { uploadBlurredPreview } from "@/lib/photo-previews";
+import { detectLocation } from "@/lib/geolocate";
 import { verifyFace } from "@/lib/verify.functions";
 import { moderateImage } from "@/lib/moderation.functions";
 import { Button } from "@/components/ui/button";
@@ -105,6 +106,42 @@ function ProfilePage() {
         marital_status: p.marital_status ?? "",
       });
   }, [me?.profile]);
+
+  // Auto-detect the new user's location so they don't have to type it. Runs once
+  // per session, only when the profile has no city AND no country yet. Fills the
+  // form fields (still fully editable) and shows a toast.
+  const [locating, setLocating] = useState(false);
+  const didAutoLocate = useRef(false);
+  useEffect(() => {
+    if (!me?.profile || didAutoLocate.current) return;
+    didAutoLocate.current = true;
+    if (!me.profile.city && !me.profile.country) {
+      setLocating(true);
+      void detectLocation().then((loc) => {
+        if (loc) {
+          setForm((f) => ({
+            ...f,
+            city: f.city || loc.city,
+            country: f.country || loc.country,
+          }));
+          toast.success(`Location detected: ${[loc.city, loc.country].filter(Boolean).join(", ")}`);
+        }
+        setLocating(false);
+      });
+    }
+  }, [me?.profile]);
+
+  const locateMe = async () => {
+    setLocating(true);
+    const loc = await detectLocation();
+    setLocating(false);
+    if (!loc) {
+      toast.error("Couldn't detect your location. Please enter it manually.");
+      return;
+    }
+    setForm((f) => ({ ...f, city: loc.city || f.city, country: loc.country || f.country }));
+    toast.success(`Location set: ${[loc.city, loc.country].filter(Boolean).join(", ")}`);
+  };
 
   const photos = me?.photos ?? [];
   const { data: albums } = usePhotoAlbums();
@@ -706,7 +743,18 @@ function ProfilePage() {
           />
         </div>
         <div className="space-y-1.5">
-          <Label>City</Label>
+          <div className="flex items-center justify-between">
+            <Label>City</Label>
+            <button
+              type="button"
+              onClick={locateMe}
+              disabled={locating}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-60"
+            >
+              <MapPin className="h-3.5 w-3.5" />
+              {locating ? "Detecting…" : "Use my current location"}
+            </button>
+          </div>
           <Input value={form.city} onChange={(e) => set("city")(e.target.value)} maxLength={80} />
         </div>
         <div className="space-y-1.5">
