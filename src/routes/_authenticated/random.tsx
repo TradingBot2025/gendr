@@ -191,23 +191,13 @@ function Random() {
           };
           if (newRow.status === "matched" && newRow.matched_with) {
             peerIdRef.current = newRow.matched_with;
-            // Get peer name
-            supabase
-              .from("profiles")
-              .select("display_name")
-              .eq("id", newRow.matched_with)
-              .maybeSingle()
-              .then(({ data: peer }) => {
-                if (peer) {
-                  // This user was waiting, so auto-accept is already enabled
-                  void callRef.current.start(
-                    newRow.matched_with!,
-                    peer.display_name ?? "Stranger",
-                    true,
-                    true,
-                  );
-                }
-              });
+            // We were the WAITING party here. The match initiator (the user
+            // whose find_random_match returned us) has already sent us an
+            // offer. DO NOT call start() — doing so fired a second offer that
+            // collided (glare) and broke every random call. Auto-accept is
+            // already enabled, so the incoming offer is accepted automatically.
+            // Keep searching=true so the UI shows "Connecting…" until the offer
+            // arrives and the call goes active.
           } else if (newRow.status === "cancelled" || newRow.status === "expired") {
             setSearching(false);
             callRef.current.setAutoAccept(false);

@@ -125,7 +125,11 @@ export function CallProvider({
       });
     }
 
-    if (forceRelay) {
+    // Only force relay when TURN credentials are actually available. Forcing
+    // relay (iceTransportPolicy: "relay") with no TURN server yields zero
+    // candidates, so random calls could never connect. Falling back to STUN
+    // keeps them working (IPs are still largely protected behind NAT).
+    if (forceRelay && turnCredsRef.current) {
       return { iceServers: servers, iceTransportPolicy: "relay" as RTCIceTransportPolicy };
     }
     return { iceServers: servers };
