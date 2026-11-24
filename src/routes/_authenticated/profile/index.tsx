@@ -32,6 +32,7 @@ import {
 } from "@/lib/data";
 import { uploadBlurredPreview } from "@/lib/photo-previews";
 import { verifyFace } from "@/lib/verify.functions";
+import { moderateImage } from "@/lib/moderation.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -327,6 +328,22 @@ function ProfilePage() {
     qc.invalidateQueries({ queryKey: ["photo-albums"] });
   };
 
+  // Find (or create) the user's private album — used to auto-hide explicit
+  // uploads. Privacy in this app == private-album membership (enforced by the
+  // sync_photo_privacy DB trigger), so explicit photos must land in an album.
+  const ensurePrivateAlbum = async (): Promise<string | null> => {
+    if (!me) return null;
+    if (uploadAlbum) return uploadAlbum;
+    const existing = (albums ?? []).find((a) => a.user_id === me.user.id);
+    if (existing) return existing.id;
+    const { data } = await supabase
+      .from("photo_albums")
+      .insert({ user_id: me.user.id, name: "Private Photos", is_private: true })
+      .select("id")
+      .single();
+    return data?.id ?? null;
+  };
+
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
     const room = uploadTargetMax - uploadTargetCount;
@@ -363,13 +380,30 @@ function ProfilePage() {
       } catch {
         toast.error("Blurred preview could not be created; the original stays private.");
       }
+      // Auto-protect explicit/nude uploads: if the moderation model flags the
+      // image, force it into a private album so it's never shown publicly,
+      // regardless of the selected destination.
+      let explicit = false;
+      try {
+        const mod = await moderateImage({ data: { path } });
+        explicit = !!mod.explicit;
+      } catch {
+        // Fail open: if moderation is unavailable, respect the user's choice.
+      }
+      let albumId: string | null = uploadAlbum || null;
+      let isPrivate = !!uploadAlbum;
+      if (explicit) {
+        albumId = await ensurePrivateAlbum();
+        isPrivate = true;
+        toast.warning("This photo was moved to a private album (explicit content).");
+      }
       const { error: e2 } = await supabase.from("photos").insert({
         preview_path,
         user_id: me.user.id,
         path,
         position: pos++,
-        album_id: uploadAlbum || null,
-        is_private: !!uploadAlbum,
+        album_id: albumId,
+        is_private: isPrivate,
         view_timer: uploadTimer,
       });
       if (e2) {
