@@ -63,7 +63,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   // without re-subscribing on every navigation (which caused channel churn and
   // "real-time connection error / timed out" toasts on each page change).
   const pathRef = useRef(path);
-  const realtimeErrorShownRef = useRef(false);
   useEffect(() => {
     pathRef.current = path;
   }, [path]);
@@ -305,22 +304,16 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         },
       )
       .subscribe((status, err) => {
+        // Realtime (postgres_changes) is a best-effort enhancement: the 8s polling
+        // loop below is a complete fallback for notifications, and calls use a
+        // separate broadcast channel. Don't surface scary "connection error" toasts
+        // for transient realtime hiccups — just log and let polling cover it.
         if (status === "CHANNEL_ERROR") {
-          console.error("[Realtime] CHANNEL_ERROR:", err);
-          if (!realtimeErrorShownRef.current) {
-            realtimeErrorShownRef.current = true;
-            toast.error("Real-time connection error. Falling back to polling.");
-          }
+          console.warn("[Realtime] channel error, using polling fallback:", err);
         } else if (status === "TIMED_OUT") {
-          console.error("[Realtime] TIMED_OUT:", err);
-          if (!realtimeErrorShownRef.current) {
-            realtimeErrorShownRef.current = true;
-            toast.error("Real-time connection timed out. Falling back to polling.");
-          }
+          console.warn("[Realtime] timed out, using polling fallback:", err);
         } else if (status === "CLOSED") {
           console.log("[Realtime] Channel closed");
-        } else if (status === "SUBSCRIBED") {
-          realtimeErrorShownRef.current = false;
         }
       });
 
