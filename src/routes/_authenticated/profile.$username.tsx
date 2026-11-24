@@ -368,7 +368,11 @@ function ProfileView() {
       .from("album_access_requests")
       .insert({ album_id: albumId, requester_id: uid });
     if (error) {
-      toast.error(error.message);
+      // 23505 = unique_violation: a request row already exists for this album.
+      // Declines are now deleted, so this mainly guards against stale legacy rows.
+      toast.error(
+        error.code === "23505" ? "You already have a request for this album." : error.message,
+      );
       return;
     }
     setAlbumRequests((prev) => ({ ...prev, [albumId]: { status: "pending", id: "" } }));
@@ -1001,7 +1005,7 @@ function ProfileView() {
                                     <Eye className="h-3 w-3 mr-1" /> View Album
                                   </Button>
                                 )}
-                                {!request && !isOwner && (
+                                {(!request || request.status === "declined") && !isOwner && (
                                   <Button
                                     variant="default"
                                     className="mt-3 bg-primary text-primary-foreground"

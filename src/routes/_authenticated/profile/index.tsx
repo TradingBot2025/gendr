@@ -106,6 +106,15 @@ function ProfilePage() {
 
   const photos = me?.photos ?? [];
   const { data: albums } = usePhotoAlbums();
+  // Per-destination photo limits: main (public) album up to 10, each private album
+  // up to 5. The uploader targets `uploadAlbum` (null = main).
+  const mainPhotoCount = photos.filter((ph) => !ph.album_id).length;
+  const uploadIsMain = !uploadAlbum;
+  const uploadTargetCount = uploadIsMain
+    ? mainPhotoCount
+    : photos.filter((ph) => ph.album_id === uploadAlbum).length;
+  const uploadTargetMax = uploadIsMain ? 10 : 5;
+  const uploadTargetFull = uploadTargetCount >= uploadTargetMax;
   const urls = useSigned(
     "photos",
     photos.map((p) => p.path),
@@ -319,13 +328,17 @@ function ProfilePage() {
 
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
-    const room = 6 - photos.length;
+    const room = uploadTargetMax - uploadTargetCount;
     if (room <= 0) {
-      toast.error("Maximum 6 photos");
+      toast.error(
+        uploadIsMain
+          ? "Main album is full (10/10). Delete a photo to add another."
+          : "This album is full (5/5). Delete a photo to add another.",
+      );
       return;
     }
     setUploading(true);
-    let pos = photos.length;
+    let pos = uploadTargetCount;
     for (const f of Array.from(files).slice(0, room)) {
       if (!f.type.startsWith("image/")) {
         toast.error(`${f.name} is not an image`);
@@ -426,26 +439,23 @@ function ProfilePage() {
       <section className="rounded-3xl border bg-card p-6 shadow-soft">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">Photos ({photos.length}/6)</h2>
+            <h2 className="text-xl font-semibold">Photos ({photos.length})</h2>
             <p className="text-xs text-muted-foreground">
-              {photos.length >= 6
-                ? "Photo limit reached (6/6). Delete a photo to add another."
-                : "Private albums require your separate approval. Set a disappearing timer (10s / 15s)."}
+              {uploadTargetFull
+                ? `Limit reached (${uploadTargetCount}/${uploadTargetMax}). Delete a photo to add another.`
+                : uploadIsMain
+                  ? `Main album: ${uploadTargetCount}/${uploadTargetMax}. Private albums: up to 5 each.`
+                  : `Selected album: ${uploadTargetCount}/${uploadTargetMax} photos.`}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAlbumOpen(true)}
-              disabled={photos.length >= 6}
-            >
+            <Button variant="outline" size="sm" onClick={() => setAlbumOpen(true)}>
               <Plus className="h-3 w-3 mr-1" />
               New album
             </Button>
             <Button
               variant="outline"
-              disabled={uploading || photos.length >= 6}
+              disabled={uploading || uploadTargetFull}
               onClick={() => fileRef.current?.click()}
             >
               <ImagePlus />
