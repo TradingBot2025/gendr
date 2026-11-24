@@ -110,7 +110,7 @@ export function CallProvider({
     };
   }, []);
 
-  const getIceServers = useCallback((forceRelay = false) => {
+  const getIceServers = useCallback((): RTCIceServer[] => {
     const servers: RTCIceServer[] = [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" },
@@ -124,15 +124,13 @@ export function CallProvider({
         credential: turnCredsRef.current.credential,
       });
     }
-
-    // Only force relay when TURN credentials are actually available. Forcing
-    // relay (iceTransportPolicy: "relay") with no TURN server yields zero
-    // candidates, so random calls could never connect. Falling back to STUN
-    // keeps them working (IPs are still largely protected behind NAT).
-    if (forceRelay && turnCredsRef.current) {
-      return { iceServers: servers, iceTransportPolicy: "relay" as RTCIceTransportPolicy };
-    }
-    return { iceServers: servers };
+    // NOTE: we no longer force iceTransportPolicy:"relay". Relay-only produced a
+    // dead call whenever the TURN server was missing or slow, which was the main
+    // reason random video never showed the other person's camera. Returning the
+    // full STUN+TURN list lets the browser use a direct path when possible and
+    // fall back to TURN relay only when required — the most reliable across
+    // PC↔mobile and mobile↔mobile networks.
+    return servers;
   }, []);
 
   const send = useCallback(async (to: string, s: Omit<Signal, "from">) => {
@@ -160,53 +158,76 @@ export function CallProvider({
     setState(IDLE);
   }, []);
 
-  const makePc = useCallback(
-    (peer: string, forceRelay = false) => {
-      const config = getIceServers(forceRelay);
-      const conn = new RTCPeerConnection(config);
-      conn.onicecandidate = (e) => {
-        if (e.candidate) void send(peer, { type: "ice", candidate: e.candidate.toJSON() });
+  // Resolve once ICE gathering is complete (or after a safety timeout). Used for
+  // non-trickle ICE: we embed all candidates in the single offer/answer SDP so
+  // only 2 signals need to travel over the (server-broadcast) signalling channel
+  // instead of one server call per candidate — which was unreliable and left the
+  // remote video black.
+  const waitForIceGathering = useCallback((conn: RTCPeerConnection) => {
+    return new Promise<void>((resolve) => {
+      if (conn.iceGatheringState === "complete") {
+        resolve();
+        return;
+      }
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        conn.removeEventListener("icegatheringstatechange", onchange);
+        clearTimeout(timer);
+        resolve();
       };
-      // Accumulate remote tracks into a single MediaStream. Some browsers (notably
-      // mobile Safari ↔ desktop Chrome) don't populate e.streams[0], so relying on it
-      // leaves the remote stream empty and no video/audio shows. Building the stream
-      // from tracks works across all browsers.
-      const remoteStream = new MediaStream();
-      conn.ontrack = (e) => {
-        remoteStream.addTrack(e.track);
-        setRemote(remoteStream);
+      const onchange = () => {
+        if (conn.iceGatheringState === "complete") finish();
       };
-      let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
-      conn.onconnectionstatechange = () => {
-        if (disconnectTimer) {
-          clearTimeout(disconnectTimer);
-          disconnectTimer = null;
-        }
-        if (conn.connectionState === "connected") {
-          // Recovered from a temporary drop — keep the call alive.
-          return;
-        }
-        if (conn.connectionState === "disconnected") {
-          // Mobile networks briefly drop; give it 8s to recover before ending.
-          disconnectTimer = setTimeout(() => {
-            if (pc.current === conn && conn.connectionState !== "connected") {
-              toast("Call ended");
-              cleanup();
-            }
-          }, 8000);
-        }
-        if (conn.connectionState === "failed") {
-          if (pc.current === conn) {
+      const timer = setTimeout(finish, 6000);
+      conn.addEventListener("icegatheringstatechange", onchange);
+    });
+  }, []);
+
+  const makePc = useCallback(() => {
+    const conn = new RTCPeerConnection({ iceServers: getIceServers() });
+    // Non-trickle ICE: candidates are gathered into the SDP (see
+    // waitForIceGathering) rather than signalled one-by-one, so we do NOT send
+    // per-candidate signals here.
+    // Accumulate remote tracks into a single MediaStream. Some browsers (notably
+    // mobile Safari ↔ desktop Chrome) don't populate e.streams[0], so relying on it
+    // leaves the remote stream empty and no video/audio shows. Building the stream
+    // from tracks works across all browsers.
+    const remoteStream = new MediaStream();
+    conn.ontrack = (e) => {
+      remoteStream.addTrack(e.track);
+      setRemote(remoteStream);
+    };
+    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    conn.onconnectionstatechange = () => {
+      if (disconnectTimer) {
+        clearTimeout(disconnectTimer);
+        disconnectTimer = null;
+      }
+      if (conn.connectionState === "connected") {
+        // Recovered from a temporary drop — keep the call alive.
+        return;
+      }
+      if (conn.connectionState === "disconnected") {
+        // Mobile networks briefly drop; give it 8s to recover before ending.
+        disconnectTimer = setTimeout(() => {
+          if (pc.current === conn && conn.connectionState !== "connected") {
             toast("Call ended");
             cleanup();
           }
+        }, 8000);
+      }
+      if (conn.connectionState === "failed") {
+        if (pc.current === conn) {
+          toast("Call ended");
+          cleanup();
         }
-      };
-      pc.current = conn;
-      return conn;
-    },
-    [getIceServers, send, cleanup],
-  );
+      }
+    };
+    pc.current = conn;
+    return conn;
+  }, [getIceServers, cleanup]);
 
   const getMedia = async (video: boolean) => {
     const m = await navigator.mediaDevices.getUserMedia({
@@ -238,14 +259,23 @@ export function CallProvider({
     try {
       setState({ status: "outgoing", peerId, peerName, video, random });
       const m = await getMedia(video);
-      // Force relay for random calls to hide IPs
-      const conn = makePc(peerId, random);
+      const conn = makePc();
       m.getTracks().forEach((t) => conn.addTrack(t, m));
       const offer = await conn.createOffer();
       await conn.setLocalDescription(offer);
+      // Non-trickle: wait until all ICE candidates are gathered into the SDP so
+      // a single offer carries everything. This is far more reliable than firing
+      // one signalling round-trip per candidate.
+      await waitForIceGathering(conn);
       // Include the caller's name so the recipient's incoming-call screen shows
       // who is calling (previously it always fell back to "Someone").
-      await send(peerId, { type: "offer", sdp: offer, video, random, name: myName });
+      await send(peerId, {
+        type: "offer",
+        sdp: conn.localDescription ?? offer,
+        video,
+        random,
+        name: myName,
+      });
     } catch {
       toast.error("Could not access microphone/camera");
       cleanup();
@@ -257,14 +287,14 @@ export function CallProvider({
     if (!offer?.sdp) return;
     try {
       const m = await getMedia(!!offer.video);
-      // Force relay for random calls
-      const conn = makePc(offer.from, !!offer.random);
+      const conn = makePc();
       m.getTracks().forEach((t) => conn.addTrack(t, m));
       await conn.setRemoteDescription(offer.sdp);
       await flushIce();
       const answer = await conn.createAnswer();
       await conn.setLocalDescription(answer);
-      await send(offer.from, { type: "answer", sdp: answer });
+      await waitForIceGathering(conn);
+      await send(offer.from, { type: "answer", sdp: conn.localDescription ?? answer });
       setState({ ...stateRef.current, status: "active" });
     } catch {
       toast.error("Could not access microphone/camera");
