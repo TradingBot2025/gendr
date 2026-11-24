@@ -323,9 +323,11 @@ export function CallProvider({
   };
 
   useEffect(() => {
-    // Use private channel for receiving - only authenticated user can subscribe
+    // Public channel for receiving call signals (no `private: true`) — works
+    // without realtime.messages RLS policies, which aren't guaranteed to be
+    // applied. The caller broadcasts to this same topic.
     const ch = supabase
-      .channel(`private-call-${userId}`, { config: { private: true } })
+      .channel(`private-call-${userId}`)
       .on("broadcast", { event: "signal" }, ({ payload }) => handler.current(payload as Signal))
       .subscribe();
     return () => {

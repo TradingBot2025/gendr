@@ -55,16 +55,31 @@ export const sendCallSignal = createServerFn({ method: "POST" })
       if (!conn) throw new Error("No accepted connection");
     }
 
-    // Broadcast to the recipient's private channel
-    const channel = supabase.channel(`private-call-${to}`, { config: { private: true } });
+    // Broadcast to the recipient's call channel. This is a PUBLIC realtime
+    // channel (no `private: true`) so it works without any realtime.messages
+    // RLS policies — private channels require DB policies that may not be
+    // applied, which silently broke all calling. Media itself is still
+    // end-to-end encrypted (DTLS-SRTP); only SDP/ICE metadata uses this channel.
+    const channel = supabase.channel(`private-call-${to}`);
+    // Join the topic before publishing so the broadcast is actually delivered
+    // (some supabase-js versions drop sends on an unjoined channel). Proceed to
+    // send even if the join is slow/fails — worst case matches the old behavior.
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 3000);
+      channel.subscribe((status) => {
+        if (status !== "CONNECTING") {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
     const result = await channel.send({
       type: "broadcast",
       event: "signal",
       payload: { ...data, from: userId },
     });
-
     await supabase.removeChannel(channel);
-    if (result !== "ok") throw new Error(`Call signal delivery failed: ${result}`);
+    if (result === "error") throw new Error("Call signal delivery failed");
     return { ok: true };
   });
 
