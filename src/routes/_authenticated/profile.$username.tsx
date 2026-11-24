@@ -192,6 +192,26 @@ function ProfileView() {
       const conn = conns?.[0];
       const isConnected = conn?.status === "accepted";
 
+      // Calling unlocks once the conversation has started (both people have sent
+      // at least one non-unsent message in this connection).
+      let convoStarted = false;
+      if (isConnected && conn) {
+        const { data: convoMsgs } = await supabase
+          .from("messages")
+          .select("sender, unsent")
+          .eq("connection_id", conn.id);
+        if (convoMsgs) {
+          let mine = false;
+          let theirs = false;
+          for (const m of convoMsgs) {
+            if (m.unsent) continue;
+            if (m.sender === uid) mine = true;
+            else theirs = true;
+          }
+          convoStarted = mine && theirs;
+        }
+      }
+
       const { data: allPhotos } = await supabase
         .from("photos")
         .select("*")
@@ -242,6 +262,7 @@ function ProfileView() {
         connections: conns ?? [],
         albumRequests: requestsMap,
         isConnected,
+        convoStarted,
       };
     },
   });
@@ -320,9 +341,7 @@ function ProfileView() {
   const previewUrls = useSigned("photo-previews", previewPaths);
 
   const p = profile?.profile;
-  const peerPresence = p
-    ? presence.getPresence(p.id)
-    : { online: false, voice: false, video: false };
+  const peerOnline = p ? presence.isOnline(p.id) : false;
 
   if (!me || profileLoading)
     return <div className="flex h-screen items-center justify-center">Loading…</div>;
@@ -674,7 +693,7 @@ function ProfileView() {
                         {p.orientation}
                       </span>
                     )}
-                    {peerPresence.online && (
+                    {peerOnline && (
                       <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-2.5 py-1 text-xs font-medium text-green-400">
                         <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />{" "}
                         Online
@@ -698,7 +717,7 @@ function ProfileView() {
                     {p.country}
                   </span>
                 )}
-                {!peerPresence.online && p.last_seen_at && (
+                {!peerOnline && p.last_seen_at && (
                   <span className="flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
                     Last seen{" "}
@@ -774,8 +793,12 @@ function ProfileView() {
                         className="h-11 w-11 shrink-0 rounded-full"
                         onClick={() => call.start(p.id, p.display_name, false)}
                         aria-label="Voice call"
-                        disabled={!peerPresence.voice}
-                        title={peerPresence.voice ? "Voice call" : "Voice calls are off"}
+                        disabled={!profile.convoStarted}
+                        title={
+                          profile.convoStarted
+                            ? "Voice call"
+                            : "Start chatting first to unlock calls"
+                        }
                       >
                         <Phone className="h-5 w-5" />
                       </Button>
@@ -784,8 +807,12 @@ function ProfileView() {
                         className="h-11 w-11 shrink-0 rounded-full"
                         onClick={() => call.start(p.id, p.display_name, true)}
                         aria-label="Video call"
-                        disabled={!peerPresence.video}
-                        title={peerPresence.video ? "Video call" : "Video calls are off"}
+                        disabled={!profile.convoStarted}
+                        title={
+                          profile.convoStarted
+                            ? "Video call"
+                            : "Start chatting first to unlock calls"
+                        }
                       >
                         <Video className="h-5 w-5" />
                       </Button>

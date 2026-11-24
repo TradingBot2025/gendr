@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos, type Message } from "@/lib/data";
-import { CallAvailability } from "@/components/app/CallAvailability";
+
 import { usePresence } from "@/lib/presence";
 import { useCall } from "@/lib/calls";
 import {
@@ -351,10 +351,21 @@ function Chat() {
     );
   if (!info || !uid) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
   const name = info.peer?.display_name ?? "Match";
-  const peerPresence = presence.getPresence(info.pid);
-  const peerVoice = peerPresence.voice;
-  const peerVideo = peerPresence.video;
-  const peerOnline = peerPresence.online;
+  const peerOnline = presence.isOnline(info.pid);
+  // Calling unlocks once the conversation has actually started — i.e. BOTH
+  // people have sent at least one (non-unsent) message. Until the other side
+  // replies, the call buttons stay disabled. Once unlocked, they keep working.
+  const convoStarted = (() => {
+    if (!msgs || !uid) return false;
+    let mine = false;
+    let theirs = false;
+    for (const m of msgs) {
+      if (m.unsent) continue;
+      if (m.sender === uid) mine = true;
+      else theirs = true;
+    }
+    return mine && theirs;
+  })();
   const disappearSeconds = info.disappearSeconds ?? 86400;
   const disappearLabel = formatDisappear(disappearSeconds) ?? "24 hours";
 
@@ -589,30 +600,28 @@ function Chat() {
             </div>
           </div>
         </Link>
-        {peerVoice && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="shrink-0"
-            onClick={() => call.start(info.pid, name, false)}
-            aria-label="Voice call"
-            title="Voice call"
-          >
-            <Phone />
-          </Button>
-        )}
-        {peerVideo && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="shrink-0"
-            onClick={() => call.start(info.pid, name, true)}
-            aria-label="Video call"
-            title="Video call"
-          >
-            <Video />
-          </Button>
-        )}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="shrink-0"
+          onClick={() => call.start(info.pid, name, false)}
+          disabled={!convoStarted}
+          aria-label="Voice call"
+          title={convoStarted ? "Voice call" : "Start chatting first to unlock calls"}
+        >
+          <Phone />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="shrink-0"
+          onClick={() => call.start(info.pid, name, true)}
+          disabled={!convoStarted}
+          aria-label="Video call"
+          title={convoStarted ? "Video call" : "Start chatting first to unlock calls"}
+        >
+          <Video />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -709,7 +718,6 @@ function Chat() {
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
-      <CallAvailability />
 
       <Dialog open={expNotice} onOpenChange={setExpNotice}>
         <DialogContent>
