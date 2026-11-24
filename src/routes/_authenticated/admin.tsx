@@ -420,8 +420,33 @@ function Admin() {
                 Full details for each report so you can take the right action.
               </p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void reports.refetch()}
+              disabled={reports.isFetching}
+            >
+              {reports.isFetching ? "Refreshing…" : "Refresh"}
+            </Button>
           </div>
-          {reports.data?.length === 0 ? (
+          {reports.isLoading ? (
+            <p className="text-muted-foreground">Loading reports…</p>
+          ) : reports.isError ? (
+            <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm">
+              <p className="font-medium text-destructive">Couldn't load reports.</p>
+              <p className="mt-1 text-muted-foreground">
+                {(reports.error as Error | null)?.message ?? "Unknown error"}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                onClick={() => void reports.refetch()}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : reports.data?.length === 0 ? (
             <p className="text-muted-foreground">No reports yet.</p>
           ) : (
             <div className="space-y-4">

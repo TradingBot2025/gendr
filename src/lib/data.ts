@@ -272,7 +272,9 @@ export function useReports() {
       // can read all profiles), merged in by id.
       const ids = Array.from(
         new Set(
-          reports.flatMap((r) => [r.reporter_id as string, r.reported_id as string]).filter(Boolean),
+          reports
+            .flatMap((r) => [r.reporter_id as string, r.reported_id as string])
+            .filter(Boolean),
         ),
       );
       const byId = new Map<string, { display_name?: string; username?: string }>();
