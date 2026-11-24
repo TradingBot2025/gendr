@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NotificationsToggle } from "@/components/app/NotificationsToggle";
 import { BlockedContacts } from "@/components/app/BlockedContacts";
+import { PasswordCard } from "@/components/app/PasswordCard";
 
 export const Route = createFileRoute("/_authenticated/account")({
   head: () => ({
@@ -118,6 +119,8 @@ function Account() {
       </section>
 
       <NotificationsToggle />
+
+      <PasswordCard />
 
       <BlockedContacts />
 
