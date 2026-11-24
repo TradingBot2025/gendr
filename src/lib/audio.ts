@@ -23,9 +23,10 @@ function getStoredContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   const w = window as Window & typeof globalThis & { __appAudioContext?: AudioContext };
   if (!w.__appAudioContext) {
-    w.__appAudioContext = getAudioContextInternal();
+    const context = getAudioContextInternal();
+    if (context) w.__appAudioContext = context;
   }
-  return w.__appAudioContext;
+  return w.__appAudioContext ?? null;
 }
 
 export function getAudioContext(): AudioContext | null {

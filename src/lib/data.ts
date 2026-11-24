@@ -103,7 +103,7 @@ export function ageOf(birthdate: string | null): number | null {
   let by: number;
   let bm: number;
   let bd: number;
-  if (m) {
+  if (m?.[1] && m[2] && m[3]) {
     by = parseInt(m[1], 10);
     bm = parseInt(m[2], 10) - 1;
     bd = parseInt(m[3], 10);

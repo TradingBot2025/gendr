@@ -4,7 +4,14 @@ import { Link } from "@tanstack/react-router";
 import { ageOf, useCoverPhoto, type Profile, type PublicProfile } from "@/lib/data";
 import { usePresence } from "@/lib/presence";
 
-type ProfileLike = Profile | PublicProfile;
+type ProfileLike = Pick<Profile, "id" | "display_name" | "gender" | "orientation" | "city" | "country"> & {
+  age?: number | null;
+  birthdate?: string | null;
+  verified?: boolean | null;
+  last_seen_at?: string | null;
+  is_online?: boolean | null;
+  bio?: string | null;
+};
 
 function getAge(p: ProfileLike): number | null {
   if ("age" in p && p.age !== undefined) return p.age;

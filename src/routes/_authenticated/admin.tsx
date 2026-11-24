@@ -112,7 +112,7 @@ function Admin() {
       </div>
     );
 
-  const setFlags = async (p: Profile, verified: boolean, banned: boolean) => {
+  const setFlags = async (p: Pick<Profile, "id" | "display_name">, verified: boolean, banned: boolean) => {
     await adminSetFlags(p.id, verified, banned);
     await adminRecordAction(p.id, banned ? "ban" : "unban", `verified=${verified}`);
     toast.success("Updated");
@@ -421,16 +421,7 @@ function Admin() {
                                 display_name:
                                   (r as { reported?: { display_name?: string } }).reported
                                     ?.display_name ?? "user",
-                                gender: "",
-                                orientation: "",
-                                birthdate: "",
-                                city: "",
-                                country: "",
-                                bio: "",
-                                banned: false,
-                                verified: false,
-                                created_at: "",
-                              } as Profile,
+                              },
                               false,
                               true,
                             )

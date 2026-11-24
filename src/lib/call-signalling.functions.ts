@@ -16,7 +16,7 @@ const SignalSchema = z.object({
 
 export const sendCallSignal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator(SignalSchema)
+  .inputValidator(SignalSchema)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { to, type, sdp, candidate, video, random } = data;
@@ -56,13 +56,15 @@ export const sendCallSignal = createServerFn({ method: "POST" })
     }
 
     // Broadcast to the recipient's private channel
-    const { error } = await supabase.channel(`private-call-${to}`).send({
+    const channel = supabase.channel(`private-call-${to}`, { config: { private: true } });
+    const result = await channel.send({
       type: "broadcast",
       event: "signal",
       payload: { ...data, from: userId },
     });
 
-    if (error) throw error;
+    await supabase.removeChannel(channel);
+    if (result !== "ok") throw new Error(`Call signal delivery failed: ${result}`);
     return { ok: true };
   });
 

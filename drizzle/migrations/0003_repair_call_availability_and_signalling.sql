@@ -1,0 +1,12 @@
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS voice_call_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS video_call_enabled boolean NOT NULL DEFAULT false;
+CREATE OR REPLACE FUNCTION public.get_call_settings(_user_id uuid) RETURNS TABLE(voice_call_enabled boolean, video_call_enabled boolean) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$ SELECT p.voice_call_enabled, p.video_call_enabled FROM public.profiles p WHERE p.id = _user_id AND NOT p.banned AND auth.uid() IS NOT NULL $$;
+GRANT EXECUTE ON FUNCTION public.get_call_settings(uuid) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_call_settings(uuid) FROM PUBLIC, anon;
+CREATE POLICY "Receive own private call signals" ON realtime.messages FOR SELECT TO authenticated USING (realtime.topic() = 'private-call-' || (SELECT auth.uid())::text);
+CREATE POLICY "Send call signals to eligible peers" ON realtime.messages FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.connections c WHERE c.status = 'accepted' AND ((c.requester = auth.uid() AND realtime.topic() = 'private-call-' || c.addressee::text) OR (c.addressee = auth.uid() AND realtime.topic() = 'private-call-' || c.requester::text))) OR EXISTS (SELECT 1 FROM public.random_matchmaking_queue q WHERE q.user_id = auth.uid() AND q.status = 'matched' AND realtime.topic() = 'private-call-' || q.matched_with::text));
+CREATE TABLE public.push_subscriptions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL, endpoint text NOT NULL UNIQUE, p256dh text NOT NULL, auth text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.push_subscriptions TO authenticated;
+GRANT ALL ON public.push_subscriptions TO service_role;
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Manage own notification devices" ON public.push_subscriptions FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());

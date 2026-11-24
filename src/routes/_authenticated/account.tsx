@@ -54,8 +54,7 @@ function Account() {
     }
     setDeleting(true);
     try {
-      const { error } = await deleteAccount({ data: { password } });
-      if (error) throw error;
+      await deleteAccount({ data: { password } });
       toast.success("Account deleted");
       await supabase.auth.signOut();
     } catch (err) {
