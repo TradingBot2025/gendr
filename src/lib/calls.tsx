@@ -116,7 +116,7 @@ export function CallProvider({
     return { iceServers: servers };
   }, []);
 
-  const send = useCallback(async (to: string, s: Omit<Signal, "from" | "name">) => {
+  const send = useCallback(async (to: string, s: Omit<Signal, "from">) => {
     try {
       await sendCallSignal({ data: { to, ...s } });
     } catch (err) {
@@ -208,7 +208,9 @@ export function CallProvider({
       m.getTracks().forEach((t) => conn.addTrack(t, m));
       const offer = await conn.createOffer();
       await conn.setLocalDescription(offer);
-      await send(peerId, { type: "offer", sdp: offer, video, random });
+      // Include the caller's name so the recipient's incoming-call screen shows
+      // who is calling (previously it always fell back to "Someone").
+      await send(peerId, { type: "offer", sdp: offer, video, random, name: myName });
     } catch {
       toast.error("Could not access microphone/camera");
       cleanup();

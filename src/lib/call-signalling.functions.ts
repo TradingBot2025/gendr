@@ -9,6 +9,9 @@ const SignalSchema = z.object({
   candidate: z.any().optional(),
   video: z.boolean().optional(),
   random: z.boolean().optional(),
+  // Caller's display name, forwarded so the recipient sees who is calling
+  // instead of a generic "Someone".
+  name: z.string().optional(),
 });
 
 export const sendCallSignal = createServerFn({ method: "POST" })
