@@ -1,5 +1,5 @@
 import { BadgeCheck, MapPin, ChevronRight } from "lucide-react";
-import { memo, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ageOf, useCoverPhoto, type Profile, type PublicProfile } from "@/lib/data";
 import { usePresence } from "@/lib/presence";
@@ -22,7 +22,7 @@ function getAge(p: ProfileLike): number | null {
   return null;
 }
 
-export const ProfileCard = memo(function ProfileCard({
+export function ProfileCard({
   p,
   photo,
   action,
@@ -150,4 +150,4 @@ export const ProfileCard = memo(function ProfileCard({
       {cardContent}
     </div>
   );
-});
+}
