@@ -141,6 +141,29 @@ function Random() {
     };
   }, [call.random, call.status]);
 
+  // Deterministically decide who calls whom to avoid glare (both sending an
+  // offer). The user with the lexicographically smaller id is always the caller;
+  // the other auto-accepts. Both sides compute this from the same two ids, so
+  // exactly one offer is sent regardless of matchmaking timing / who the RPC
+  // returned the peer to.
+  const iAmCaller = (peerId: string) => !!uid && uid < peerId;
+
+  const beginWithPeer = (peerId: string, peerName: string) => {
+    peerIdRef.current = peerId;
+    if (iAmCaller(peerId)) {
+      // I'm the caller — send the offer (only if not already in a call).
+      matchInitiatedRef.current = true;
+      callRef.current.setAutoAccept(false);
+      if (callRef.current.status === "idle")
+        void callRef.current.start(peerId, peerName, true, true);
+    } else {
+      // I'm the callee — wait for the caller's offer and auto-accept it.
+      matchInitiatedRef.current = false;
+      callRef.current.setAutoAccept(true);
+      setSearching(true);
+    }
+  };
+
   // Search for match using server-side RPC
   const findMatch = async () => {
     if (!uid || !consentGiven) return;
@@ -153,13 +176,11 @@ function Random() {
       if (error) throw error;
       if (data && data.length > 0) {
         const peer = data[0];
-        peerIdRef.current = peer.peer_id;
-        matchInitiatedRef.current = true;
-        callRef.current.setAutoAccept(false);
-        void callRef.current.start(peer.peer_id, peer.peer_name, true, true);
+        beginWithPeer(peer.peer_id, peer.peer_name);
       } else {
-        // No match found immediately - wait for one via realtime
-        // This user will be the waiting party, so enable auto-accept
+        // No match found immediately - wait for one via realtime. We don't yet
+        // know the peer id, so just enable auto-accept; the caller/callee role
+        // is decided in the realtime handler once the peer is known.
         matchInitiatedRef.current = false;
         callRef.current.setAutoAccept(true);
         setSearching(true);
@@ -190,14 +211,21 @@ function Random() {
             matched_with: string | null;
           };
           if (newRow.status === "matched" && newRow.matched_with) {
-            peerIdRef.current = newRow.matched_with;
-            // We were the WAITING party here. The match initiator (the user
-            // whose find_random_match returned us) has already sent us an
-            // offer. DO NOT call start() — doing so fired a second offer that
-            // collided (glare) and broke every random call. Auto-accept is
-            // already enabled, so the incoming offer is accepted automatically.
-            // Keep searching=true so the UI shows "Connecting…" until the offer
-            // arrives and the call goes active.
+            const peerId = newRow.matched_with;
+            // If we're the caller and haven't started yet, send the offer now.
+            // If we're the callee, just wait for the offer (auto-accept).
+            if (iAmCaller(peerId) && callRef.current.status === "idle") {
+              supabase
+                .from("profiles")
+                .select("display_name")
+                .eq("id", peerId)
+                .maybeSingle()
+                .then(({ data: peer }) =>
+                  beginWithPeer(peerId, peer?.display_name ?? "Stranger"),
+                );
+            } else {
+              callRef.current.setAutoAccept(true);
+            }
           } else if (newRow.status === "cancelled" || newRow.status === "expired") {
             setSearching(false);
             callRef.current.setAutoAccept(false);

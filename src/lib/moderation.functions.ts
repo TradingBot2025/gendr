@@ -32,6 +32,11 @@ export const moderateImage = createServerFn({ method: "POST" })
 
     const url = `data:${blob.type || "image/jpeg"};base64,${toBase64(await blob.arrayBuffer())}`;
 
+    if (!process.env["LOVABLE_API_KEY"]) {
+      console.error("[moderation] LOVABLE_API_KEY is not set — skipping nudity check.");
+      return { explicit: false, reason: "Moderation not configured" };
+    }
+
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -45,26 +50,40 @@ export const moderateImage = createServerFn({ method: "POST" })
           {
             role: "system",
             content:
-              'You are a content-safety moderator for a dating app. Decide whether the image contains nudity or sexually explicit content (e.g. fully nude body, exposed genitals, bare breasts or buttocks, or sexual acts). Do NOT flag ordinary clothed or swimwear photos. Reply ONLY JSON: {"explicit": boolean, "reason": string}.',
+              'You are a strict content-safety moderator for a dating app. Look at the image and decide if it shows ANY nudity or sexually explicit content. Set "explicit" to true if the image contains ANY of: fully or partially nude body, bare breasts / nipples, bare buttocks, exposed genitals, visible pubic area, see-through clothing revealing the above, or sexual activity. When in doubt, set explicit=true. Ordinary clothed photos, faces, and swimwear that fully covers the body are explicit=false. Reply ONLY a JSON object: {"explicit": boolean, "reason": short string}.',
           },
           {
             role: "user",
             content: [
-              { type: "text", text: "Is this image nude or sexually explicit?" },
+              { type: "text", text: "Moderate this image for nudity / explicit content." },
               { type: "image_url", image_url: { url } },
             ],
           },
         ],
       }),
     });
-    if (!res.ok) return { explicit: false, reason: "Moderation unavailable" };
+    if (!res.ok) {
+      console.error("[moderation] gateway error", res.status);
+      return { explicit: false, reason: `Moderation unavailable (${res.status})` };
+    }
 
     const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     let result = { explicit: false, reason: "No answer" };
+    const content = json.choices?.[0]?.message?.content ?? "";
     try {
-      result = JSON.parse(json.choices?.[0]?.message?.content ?? "{}");
+      result = JSON.parse(content);
     } catch {
-      /* keep default (fail open) */
+      // Some models wrap JSON in prose/fences — try to extract the first object.
+      const m = content.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          result = JSON.parse(m[0]);
+        } catch {
+          /* keep default */
+        }
+      }
     }
-    return { explicit: !!result.explicit, reason: result.reason };
+    const explicit = result.explicit === true;
+    console.log("[moderation] explicit=%s reason=%s", explicit, result.reason);
+    return { explicit, reason: result.reason };
   });
