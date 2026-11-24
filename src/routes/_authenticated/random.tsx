@@ -192,7 +192,29 @@ function Random() {
     }
   };
 
-  // Subscribe to random matchmaking queue updates for real-time matching
+  // Shared handler for "the queue says I've been matched with <peerId>".
+  const handleMatched = (peerId: string) => {
+    if (!peerId) return;
+    peerIdRef.current = peerId;
+    // If we're the caller and no call is running yet, send the offer now. If
+    // we're the callee, just wait for the caller's offer (auto-accept).
+    if (iAmCaller(peerId) && callRef.current.status === "idle") {
+      supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", peerId)
+        .maybeSingle()
+        .then(({ data: peer }) => beginWithPeer(peerId, peer?.display_name ?? "Stranger"));
+    } else {
+      callRef.current.setAutoAccept(true);
+      setSearching(true);
+    }
+  };
+
+  // Subscribe to random matchmaking queue updates for real-time matching.
+  // NOTE: this requires random_matchmaking_queue to be in the supabase_realtime
+  // publication (see MIGRATIONS TO APPLY). The polling fallback below covers the
+  // case where it isn't, so matching still works on both devices.
   useEffect(() => {
     if (!uid || !searching) return;
     const ch = supabase
@@ -211,19 +233,7 @@ function Random() {
             matched_with: string | null;
           };
           if (newRow.status === "matched" && newRow.matched_with) {
-            const peerId = newRow.matched_with;
-            // If we're the caller and haven't started yet, send the offer now.
-            // If we're the callee, just wait for the offer (auto-accept).
-            if (iAmCaller(peerId) && callRef.current.status === "idle") {
-              supabase
-                .from("profiles")
-                .select("display_name")
-                .eq("id", peerId)
-                .maybeSingle()
-                .then(({ data: peer }) => beginWithPeer(peerId, peer?.display_name ?? "Stranger"));
-            } else {
-              callRef.current.setAutoAccept(true);
-            }
+            handleMatched(newRow.matched_with);
           } else if (newRow.status === "cancelled" || newRow.status === "expired") {
             setSearching(false);
             callRef.current.setAutoAccept(false);
@@ -233,6 +243,43 @@ function Random() {
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
+    };
+  }, [uid, searching]);
+
+  // Polling fallback for matchmaking. Some deployments don't broadcast queue
+  // UPDATEs over realtime (the table may be missing from the publication), which
+  // left the waiting user stuck forever. Poll the caller's own queue row every
+  // few seconds; when it flips to "matched", connect deterministically. Stops
+  // once a call is active.
+  useEffect(() => {
+    if (!uid || !searching) return;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const { data: rows } = await Promise.resolve(
+          supabase
+            .from("random_matchmaking_queue")
+            .select("status, matched_with")
+            .eq("user_id", uid)
+            .maybeSingle(),
+        );
+        if (cancelled || !rows) return;
+        const row = rows as { status: string; matched_with: string | null };
+        if (row.status === "matched" && row.matched_with) {
+          if (callRef.current.status === "idle" || !matchInitiatedRef.current) {
+            handleMatched(row.matched_with);
+          }
+        }
+      } catch {
+        // ignore transient poll errors
+      }
+    };
+    void poll();
+    const id = setInterval(poll, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
     };
   }, [uid, searching]);
 
