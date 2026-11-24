@@ -18,7 +18,6 @@ import {
   UserX,
   FileText,
   Star,
-  Trash2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -386,11 +385,12 @@ function Messages() {
     qc.invalidateQueries({ queryKey: ["album-requests-mine"] });
   };
 
+  // Decline = remove the request row (the owner has DELETE permission). Deleting
+  // rather than leaving a 'declined' row lets the requester ask again later — the
+  // table has UNIQUE(album_id, requester_id), so a stale declined row would block
+  // any future request and the request would just "disappear".
   const handleDecline = async (requestId: string) => {
-    const { error } = await supabase
-      .from("album_access_requests")
-      .update({ status: "declined" })
-      .eq("id", requestId);
+    const { error } = await supabase.from("album_access_requests").delete().eq("id", requestId);
     if (error) {
       toast.error(error.message);
       return;
@@ -413,45 +413,15 @@ function Messages() {
     qc.invalidateQueries({ queryKey: ["album-requests-mine"] });
   };
 
-  // Mark every incoming message in a conversation as read (double-click / menu).
+  // Mark every incoming message in a conversation as read (menu action). Direct
+  // UPDATE on messages is revoked, so use the mark_chat_read SECURITY DEFINER RPC.
   const markRead = async (connectionId: string) => {
     if (!uid) return;
-    const { error } = await supabase
-      .from("messages")
-      .update({ read_at: new Date().toISOString() })
-      .eq("connection_id", connectionId)
-      .neq("sender", uid)
-      .is("read_at", null);
+    const { error } = await supabase.rpc("mark_chat_read", { _connection_id: connectionId });
     if (error) {
       toast.error(error.message);
       return;
     }
-    qc.invalidateQueries({ queryKey: ["inbox"] });
-  };
-
-  // Delete every message in all of my conversations. RLS may only allow deleting
-  // messages I sent, so fall back to that if a full delete is rejected.
-  const deleteAllMessages = async () => {
-    const ids = (inboxData ?? []).map((d) => d.connection.id);
-    if (!ids.length) {
-      toast.info("There are no messages to delete.");
-      return;
-    }
-    if (!confirm("Delete all messages in all your conversations? This cannot be undone.")) return;
-    const { error } = await supabase.from("messages").delete().in("connection_id", ids);
-    if (error) {
-      // Retry deleting only my own messages if deleting across users is blocked.
-      const retry = await supabase
-        .from("messages")
-        .delete()
-        .in("connection_id", ids)
-        .eq("sender", uid ?? "");
-      if (retry.error) {
-        toast.error(retry.error.message);
-        return;
-      }
-    }
-    toast.success("All messages deleted");
     qc.invalidateQueries({ queryKey: ["inbox"] });
   };
 
@@ -535,15 +505,6 @@ function Messages() {
               <UserPlus className="h-4 w-4" />
               <span className="ml-2">Refer a friend</span>
             </Link>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={deleteAllMessages}
-            className="text-destructive hover:text-destructive"
-          >
-            <Trash2 className="h-4 w-4" />
-            <span className="ml-2 hidden sm:inline">Delete all</span>
           </Button>
         </div>
       </div>

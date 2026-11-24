@@ -59,6 +59,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const lastPolledMessageId = useRef<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // Keep the latest path in a ref so the realtime/polling effects can read it
+  // without re-subscribing on every navigation (which caused channel churn and
+  // "real-time connection error / timed out" toasts on each page change).
+  const pathRef = useRef(path);
+  const realtimeErrorShownRef = useRef(false);
+  useEffect(() => {
+    pathRef.current = path;
+  }, [path]);
 
   // Count unread DB messages
   const { data: unreadCount = 0 } = useQuery({
@@ -129,7 +137,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           void qc.invalidateQueries({ queryKey: ["inbox"] });
 
           const connId = String(message["connection_id"]);
-          if (path === `/chat/${connId}`) return; // already in that chat
+          if (pathRef.current === `/chat/${connId}`) return; // already in that chat
 
           const msgId = `msg-${message["id"]}`;
           if (notifiedMessageIds.has(msgId)) return;
@@ -299,12 +307,20 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       .subscribe((status, err) => {
         if (status === "CHANNEL_ERROR") {
           console.error("[Realtime] CHANNEL_ERROR:", err);
-          toast.error("Real-time connection error. Falling back to polling.");
+          if (!realtimeErrorShownRef.current) {
+            realtimeErrorShownRef.current = true;
+            toast.error("Real-time connection error. Falling back to polling.");
+          }
         } else if (status === "TIMED_OUT") {
           console.error("[Realtime] TIMED_OUT:", err);
-          toast.error("Real-time connection timed out. Falling back to polling.");
+          if (!realtimeErrorShownRef.current) {
+            realtimeErrorShownRef.current = true;
+            toast.error("Real-time connection timed out. Falling back to polling.");
+          }
         } else if (status === "CLOSED") {
           console.log("[Realtime] Channel closed");
+        } else if (status === "SUBSCRIBED") {
+          realtimeErrorShownRef.current = false;
         }
       });
 
@@ -316,7 +332,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         channelRef.current = null;
       }
     };
-  }, [uid, path, qc, navigate]);
+  }, [uid, qc, navigate]);
 
   // Fallback polling every 8 seconds for new messages
   useEffect(() => {
@@ -342,7 +358,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
           if (!notifiedMessageIds.has(msgId)) {
             const connId = String(latestMsg.connection_id);
-            if (path !== `/chat/${connId}`) {
+            if (pathRef.current !== `/chat/${connId}`) {
               const { data: sender } = await supabase
                 .from("profiles")
                 .select("display_name")
@@ -392,7 +408,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
     const interval = setInterval(poll, 8000);
     return () => clearInterval(interval);
-  }, [uid, path, navigate]);
+  }, [uid, navigate]);
 
   return (
     <NotificationContext.Provider

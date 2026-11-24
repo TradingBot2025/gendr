@@ -280,21 +280,16 @@ function Chat() {
   });
 
   // Mark incoming messages as read while this chat is open (and whenever new ones
-  // arrive). Without this, read_at stayed null forever and the inbox kept showing
-  // an unread badge for conversations the user had already read.
+  // arrive). Direct UPDATE on messages is revoked (REVOKE UPDATE ... FROM
+  // authenticated), so we must go through the SECURITY DEFINER mark_chat_read RPC —
+  // otherwise the browser gets "permission denied for table messages".
   useEffect(() => {
     if (!id || !uid || !msgs || msgs.length === 0) return;
     const hasUnread = msgs.some((m) => m.sender !== uid && !m.read_at);
     if (!hasUnread) return;
-    supabase
-      .from("messages")
-      .update({ read_at: new Date().toISOString() })
-      .eq("connection_id", id)
-      .neq("sender", uid)
-      .is("read_at", null)
-      .then(({ error }) => {
-        if (!error) qc.invalidateQueries({ queryKey: ["inbox"] });
-      });
+    supabase.rpc("mark_chat_read", { _connection_id: id }).then(({ error }) => {
+      if (!error) qc.invalidateQueries({ queryKey: ["inbox"] });
+    });
   }, [msgs, id, uid, qc]);
 
   // Fetch user's albums with photos for album picker
@@ -396,16 +391,9 @@ function Chat() {
   };
 
   const unsendMessage = async (messageId: string) => {
-    const { error } = await supabase
-      .from("messages")
-      .update({
-        unsent: true,
-        body: null,
-        attachment_path: null,
-        attachment_type: null,
-        attachment_name: null,
-      })
-      .eq("id", messageId);
+    // Direct UPDATE/DELETE on messages is not granted; unsend goes through the
+    // SECURITY DEFINER unsend_message RPC (sets unsent=true, clears the body).
+    const { error } = await supabase.rpc("unsend_message", { _message_id: messageId });
     if (error) {
       toast.error(error.message);
       return;

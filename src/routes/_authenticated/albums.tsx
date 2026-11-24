@@ -201,10 +201,15 @@ function Albums() {
     },
   });
   const respondAccess = async (id: string, status: "approved" | "declined") => {
-    const { error } = await supabase.from("album_access_requests").update({ status }).eq("id", id);
+    // Declining (or revoking) removes the request row so the viewer can request
+    // access again later; a stale 'declined' row would otherwise block re-requests.
+    const { error } =
+      status === "declined"
+        ? await supabase.from("album_access_requests").delete().eq("id", id)
+        : await supabase.from("album_access_requests").update({ status }).eq("id", id);
     if (error) toast.error(error.message);
     else {
-      toast.success(status === "approved" ? "Album access approved" : "Album access revoked");
+      toast.success(status === "approved" ? "Album access approved" : "Album access removed");
       void qc.invalidateQueries({ queryKey: ["album-access"] });
     }
   };
