@@ -34,8 +34,14 @@ import {
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) throw redirect({ to: "/auth" });
+    // Use getSession() (reads the persisted session from storage) instead of
+    // getUser() (a blocking network call to Supabase on every open). getUser()
+    // could transiently fail on mobile with a slow/dropped connection at launch
+    // and bounce a still-logged-in user to /auth — which looked like an
+    // unexpected logout. A stored session is trusted here; supabase-js refreshes
+    // the token in the background and server routes re-validate as needed.
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) throw redirect({ to: "/auth" });
   },
   component: Shell,
 });

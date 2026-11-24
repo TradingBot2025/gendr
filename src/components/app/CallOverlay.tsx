@@ -13,6 +13,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { useCall } from "@/lib/calls";
 import { playRingingSound, stopRingingSound, unlockAudioContext } from "@/lib/audio";
+import {
+  showBackgroundNotification,
+  clearBackgroundNotification,
+  notificationPermission,
+} from "@/lib/push";
 
 export function MediaView({
   stream,
@@ -140,12 +145,35 @@ export function CallOverlay() {
     };
   }, []);
 
-  // Play ringing sound on incoming call
+  // Play ringing sound on incoming call, and — when the tab is in the
+  // background — also raise a system notification + vibration so the incoming
+  // call is noticed like other calling apps. (A fully closed app can only be
+  // reached via Web Push, which this app intentionally does not use.)
   useEffect(() => {
-    if (c.status === "incoming") playRingingSound();
-    else stopRingingSound();
+    if (c.status === "incoming") {
+      playRingingSound();
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        try {
+          navigator.vibrate?.([200, 100, 200, 100, 200]);
+        } catch {
+          /* vibration unsupported */
+        }
+      }
+      if (typeof document !== "undefined" && document.hidden) {
+        if (notificationPermission() === "granted") {
+          void showBackgroundNotification({
+            title: `Incoming ${c.video ? "video" : "voice"} call`,
+            body: c.peerName,
+            tag: "incoming-call",
+          });
+        }
+      }
+    } else {
+      stopRingingSound();
+      if (c.status === "idle") void clearBackgroundNotification("incoming-call");
+    }
     return () => stopRingingSound();
-  }, [c.status]);
+  }, [c.status, c.video, c.peerName]);
 
   if (c.status === "idle" || c.random) return null;
 
