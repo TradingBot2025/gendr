@@ -10,7 +10,7 @@ import {
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { sendCallSignal, getTurnCredentials } from "@/lib/call-signalling.functions";
+import { getTurnCredentials } from "@/lib/call-signalling.functions";
 
 type Signal = {
   type: "offer" | "answer" | "ice" | "hangup" | "decline";
@@ -82,6 +82,10 @@ export function CallProvider({
   const localRef = useRef<MediaStream | null>(null);
   const pendingOffer = useRef<Signal | null>(null);
   const iceQueue = useRef<RTCIceCandidateInit[]>([]);
+  // One persistent Realtime channel per peer, used to broadcast call signals
+  // (offer/answer/ice/hangup) directly from this browser to the peer's personal
+  // channel. Reused across signals so we only subscribe once per peer.
+  const signalChannels = useRef<Map<string, RealtimeChannel>>(new Map());
   const autoAccept = useRef(false);
   const facingRef = useRef<"user" | "environment">("user");
   const remoteMediaRef = useRef<HTMLMediaElement | null>(null);
@@ -133,15 +137,56 @@ export function CallProvider({
     return servers;
   }, []);
 
-  const send = useCallback(async (to: string, s: Omit<Signal, "from">) => {
-    try {
-      await sendCallSignal({ data: { to, ...s } });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error("Failed to send call signal:", message);
-      // Don't throw - let the call fail naturally
-    }
-  }, []);
+  // Send a call signal DIRECTLY from this browser to the peer's personal channel
+  // (`private-call-<peer>`). The peer is already subscribed to that channel (see
+  // the receiver effect below), so a broadcast published here reaches them.
+  //
+  // Why not a server function: the previous server-side send re-validated the
+  // matchmaking queue by reading the PEER's queue row, which fails under RLS
+  // (you can only read your own row) — so every offer/answer was silently
+  // dropped and calls never connected. Publishing on a PUBLIC channel needs no
+  // DB policies and no server round-trip, and reuses one channel per peer, so
+  // it's both reliable and fast. Media is still end-to-end encrypted (DTLS-SRTP).
+  const send = useCallback(
+    async (to: string, s: Omit<Signal, "from">) => {
+      try {
+        let ch = signalChannels.current.get(to);
+        if (!ch) {
+          ch = supabase.channel(`private-call-${to}`);
+          signalChannels.current.set(to, ch);
+        }
+        // Make sure the channel is joined before the first publish on it.
+        if (ch.state !== "joined") {
+          await new Promise<void>((resolve) => {
+            let done = false;
+            const finish = () => {
+              if (done) return;
+              done = true;
+              resolve();
+            };
+            const t = setTimeout(finish, 3000);
+            ch!.subscribe((status) => {
+              if (
+                status === "SUBSCRIBED" ||
+                status === "CHANNEL_ERROR" ||
+                status === "TIMED_OUT" ||
+                status === "CLOSED"
+              ) {
+                clearTimeout(t);
+                finish();
+              }
+            });
+          });
+        }
+        await ch.send({ type: "broadcast", event: "signal", payload: { ...s, from: userId } });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("Failed to send call signal:", message);
+        // Don't throw - let the call fail naturally
+      }
+    },
+    [userId],
+  );
 
   const cleanup = useCallback(() => {
     pc.current?.close();
@@ -319,6 +364,39 @@ export function CallProvider({
   handler.current = async (s: Signal) => {
     const cur = stateRef.current;
     if (s.type === "offer") {
+      // Glare: both random users got matched at the same instant and both sent
+      // an offer. Resolve deterministically — the lower user id wins, the higher
+      // yields (drops its own offer and accepts the lower id's offer). Without
+      // this, both sides would decline each other and the call would never form.
+      if (cur.status === "outgoing" && cur.peerId === s.from) {
+        if (userId < s.from) {
+          // I'm the lower id — my offer wins. Ignore their offer entirely; they
+          // will yield to mine and answer it.
+          return;
+        }
+        // I'm the higher id — yield: tear down my outgoing attempt, then accept
+        // the lower id's offer below.
+        try {
+          pc.current?.close();
+        } catch {
+          /* ignore */
+        }
+        pc.current = null;
+        localRef.current?.getTracks().forEach((t) => t.stop());
+        localRef.current = null;
+        setLocal(null);
+        iceQueue.current = [];
+        pendingOffer.current = s;
+        setState({
+          status: "incoming",
+          peerId: s.from,
+          peerName: s.name ?? "Someone",
+          video: !!s.video,
+          random: !!s.random,
+        });
+        await accept();
+        return;
+      }
       if (cur.status !== "idle") {
         void send(s.from, { type: "decline" });
         return;
@@ -359,13 +437,18 @@ export function CallProvider({
   useEffect(() => {
     // Public channel for receiving call signals (no `private: true`) — works
     // without realtime.messages RLS policies, which aren't guaranteed to be
-    // applied. The caller broadcasts to this same topic.
+    // applied. Callers publish to our `private-call-<userId>` topic; we receive
+    // here and reply on the caller's topic (see `send`).
     const ch = supabase
       .channel(`private-call-${userId}`)
       .on("broadcast", { event: "signal" }, ({ payload }) => handler.current(payload as Signal))
       .subscribe();
+    const channels = signalChannels.current;
     return () => {
       supabase.removeChannel(ch);
+      // Tear down any per-peer send channels opened during this session.
+      channels.forEach((c) => void supabase.removeChannel(c));
+      channels.clear();
     };
   }, [userId]);
 

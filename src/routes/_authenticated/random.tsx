@@ -141,27 +141,17 @@ function Random() {
     };
   }, [call.random, call.status]);
 
-  // Deterministically decide who calls whom to avoid glare (both sending an
-  // offer). The user with the lexicographically smaller id is always the caller;
-  // the other auto-accepts. Both sides compute this from the same two ids, so
-  // exactly one offer is sent regardless of matchmaking timing / who the RPC
-  // returned the peer to.
-  const iAmCaller = (peerId: string) => !!uid && uid < peerId;
-
+  // Find a match (see beginWithPeer).
   const beginWithPeer = (peerId: string, peerName: string) => {
+    // The user whose find_random_match returned a peer is ALWAYS the initiator:
+    // send the offer. The other side is a passive waiter that auto-accepts. This
+    // works regardless of which user searched first or second, and regardless of
+    // their ids (the old "smaller id calls" rule deadlocked when only one side
+    // learned of the match).
     peerIdRef.current = peerId;
-    if (iAmCaller(peerId)) {
-      // I'm the caller — send the offer (only if not already in a call).
-      matchInitiatedRef.current = true;
-      callRef.current.setAutoAccept(false);
-      if (callRef.current.status === "idle")
-        void callRef.current.start(peerId, peerName, true, true);
-    } else {
-      // I'm the callee — wait for the caller's offer and auto-accept it.
-      matchInitiatedRef.current = false;
-      callRef.current.setAutoAccept(true);
-      setSearching(true);
-    }
+    matchInitiatedRef.current = true;
+    callRef.current.setAutoAccept(false);
+    if (callRef.current.status === "idle") void callRef.current.start(peerId, peerName, true, true);
   };
 
   // Search for match using server-side RPC
@@ -180,7 +170,7 @@ function Random() {
       } else {
         // No match found immediately - wait for one via realtime. We don't yet
         // know the peer id, so just enable auto-accept; the caller/callee role
-        // is decided in the realtime handler once the peer is known.
+        // is decided once an offer arrives or the queue updates.
         matchInitiatedRef.current = false;
         callRef.current.setAutoAccept(true);
         setSearching(true);
@@ -192,23 +182,14 @@ function Random() {
     }
   };
 
-  // Shared handler for "the queue says I've been matched with <peerId>".
+  // The passive waiter learned (via realtime/poll) that it was matched. It did
+  // NOT initiate, so it just waits to auto-accept the initiator's offer.
   const handleMatched = (peerId: string) => {
     if (!peerId) return;
     peerIdRef.current = peerId;
-    // If we're the caller and no call is running yet, send the offer now. If
-    // we're the callee, just wait for the caller's offer (auto-accept).
-    if (iAmCaller(peerId) && callRef.current.status === "idle") {
-      supabase
-        .from("profiles")
-        .select("display_name")
-        .eq("id", peerId)
-        .maybeSingle()
-        .then(({ data: peer }) => beginWithPeer(peerId, peer?.display_name ?? "Stranger"));
-    } else {
-      callRef.current.setAutoAccept(true);
-      setSearching(true);
-    }
+    matchInitiatedRef.current = false;
+    callRef.current.setAutoAccept(true);
+    setSearching(true);
   };
 
   // Subscribe to random matchmaking queue updates for real-time matching.
