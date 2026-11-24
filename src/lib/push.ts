@@ -114,15 +114,18 @@ export async function subscribeToPush(): Promise<void> {
     if (!endpoint || !keys?.p256dh || !keys?.auth) return;
 
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.user) return;
 
     await supabase
       .from("push_subscriptions")
-      .upsert({ user_id: user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth } as never, {
-        onConflict: "endpoint",
-      });
+      .upsert(
+        { user_id: session.user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth } as never,
+        {
+          onConflict: "endpoint",
+        },
+      );
   } catch (err) {
     console.warn("[push] subscribe failed:", err);
   }
