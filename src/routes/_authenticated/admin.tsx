@@ -39,6 +39,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+const REASON_LABELS: Record<string, string> = {
+  spam: "Spam / advertising",
+  fraud: "Scam / fraud",
+  money_request: "Money request",
+  fake_profile: "Fake profile",
+  harassment: "Harassment",
+  inappropriate_content: "Inappropriate content",
+  underage: "Underage user",
+  other: "Other",
+};
+
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
     meta: [
@@ -99,6 +110,14 @@ function Admin() {
     "photos",
     list.map((p) => data?.first[p.id]),
   );
+  // Sign any report proof images so admins can view them. (Declared with the
+  // other hooks, before the admin-only early return, to satisfy hook order.)
+  const reportProofs = useSigned(
+    "report-proofs",
+    (reports.data ?? []).map(
+      (r) => (r as { proof_file_path?: string | null }).proof_file_path ?? undefined,
+    ),
+  );
   const declined = (data?.conns ?? []).filter((c) => c.status === "declined");
   const pending = (data?.conns ?? []).filter((c) => c.status === "pending");
 
@@ -121,6 +140,33 @@ function Admin() {
     await adminRecordAction(p.id, banned ? "ban" : "unban", `verified=${verified}`);
     toast.success("Updated");
     qc.invalidateQueries({ queryKey: ["admin-users"] });
+  };
+
+  const setReportStatus = async (id: string, status: string) => {
+    const { error } = await supabase
+      .from("reports")
+      .update({
+        status,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: me?.user.id,
+      } as never)
+      .eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(status === "reviewed" ? "Marked as reviewed" : "Reopened");
+    void qc.invalidateQueries({ queryKey: ["reports"] });
+  };
+
+  const deleteReport = async (id: string) => {
+    const { error } = await supabase.from("reports").delete().eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Report deleted");
+    void qc.invalidateQueries({ queryKey: ["reports"] });
   };
 
   const handleDelete = async () => {
@@ -368,76 +414,156 @@ function Admin() {
 
         <TabsContent value="reports">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Profile reports</h2>
-            <p className="text-sm text-muted-foreground">
-              Review reported profiles and take action.
-            </p>
+            <div>
+              <h2 className="text-xl font-semibold">Profile reports</h2>
+              <p className="text-sm text-muted-foreground">
+                Full details for each report so you can take the right action.
+              </p>
+            </div>
           </div>
           {reports.data?.length === 0 ? (
             <p className="text-muted-foreground">No reports yet.</p>
           ) : (
-            <div className="overflow-x-auto rounded-3xl border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Reporter</TableHead>
-                    <TableHead>Reported</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reports.data?.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell>
-                        {(
-                          r as {
-                            reporter?: { display_name?: string };
-                            reported?: { display_name?: string };
-                          }
-                        ).reporter?.display_name ?? "—"}
-                      </TableCell>
-                      <TableCell>
-                        {(
-                          r as {
-                            reporter?: { display_name?: string };
-                            reported?: { display_name?: string };
-                          }
-                        ).reported?.display_name ?? "—"}
-                      </TableCell>
-                      <TableCell className="max-w-[300px] truncate">{r.reason}</TableCell>
-                      <TableCell>
+            <div className="space-y-4">
+              {reports.data?.map((r) => {
+                const rep = r as {
+                  id: string;
+                  reporter_id: string;
+                  reported_id: string;
+                  reason: string;
+                  reason_category: string | null;
+                  proof_text: string | null;
+                  proof_file_path: string | null;
+                  auto_blocked: boolean;
+                  status: string;
+                  created_at: string;
+                  reviewed_at: string | null;
+                  reporter?: { display_name?: string; username?: string };
+                  reported?: { display_name?: string; username?: string };
+                };
+                const reporterName = rep.reporter?.display_name ?? "Unknown";
+                const reportedName = rep.reported?.display_name ?? "user";
+                const proofUrl = rep.proof_file_path
+                  ? reportProofs[rep.proof_file_path]
+                  : undefined;
+                const reportedProfile = (data?.profiles ?? []).find(
+                  (p) => p.id === rep.reported_id,
+                ) as Pick<Profile, "id" | "display_name"> | undefined;
+                return (
+                  <div key={rep.id} className="rounded-3xl border bg-card p-4 shadow-soft">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="text-sm">
+                        <span className="font-semibold">{reporterName}</span>
+                        <span className="text-muted-foreground"> reported </span>
+                        <Link
+                          to="/profile/$username"
+                          params={{
+                            username: rep.reported?.username ?? rep.reported_id,
+                          }}
+                          className="font-semibold text-primary hover:underline"
+                        >
+                          {reportedName}
+                        </Link>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {rep.auto_blocked && (
+                          <span className="rounded bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
+                            auto-blocked
+                          </span>
+                        )}
                         <span
-                          className={`px-2 py-0.5 rounded text-xs ${r.status === "open" ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"}`}
+                          className={`rounded px-2 py-0.5 text-xs ${rep.status === "open" ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"}`}
                         >
-                          {r.status}
+                          {rep.status}
                         </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() =>
-                            setFlags(
-                              {
-                                id: r.reported_id,
-                                display_name:
-                                  (r as { reported?: { display_name?: string } }).reported
-                                    ?.display_name ?? "user",
-                              },
-                              false,
-                              true,
-                            )
-                          }
-                        >
-                          Ban profile
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </div>
+                    </div>
+
+                    <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Category
+                        </dt>
+                        <dd className="font-medium">
+                          {rep.reason_category
+                            ? (REASON_LABELS[rep.reason_category] ?? rep.reason_category)
+                            : "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Reported
+                        </dt>
+                        <dd className="text-xs text-muted-foreground">
+                          {new Date(rep.created_at).toLocaleString()}
+                          {rep.reviewed_at &&
+                            ` · reviewed ${new Date(rep.reviewed_at).toLocaleString()}`}
+                        </dd>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Details
+                        </dt>
+                        <dd className="whitespace-pre-wrap break-words">{rep.reason || "—"}</dd>
+                      </div>
+                      {rep.proof_text && (
+                        <div className="sm:col-span-2">
+                          <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Reporter's note
+                          </dt>
+                          <dd className="whitespace-pre-wrap break-words">{rep.proof_text}</dd>
+                        </div>
+                      )}
+                    </dl>
+
+                    {proofUrl && (
+                      <div className="mt-3">
+                        <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
+                          Proof attachment
+                        </p>
+                        <img
+                          src={proofUrl}
+                          alt="Report proof"
+                          className="max-h-64 rounded-xl border object-contain"
+                        />
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() =>
+                          reportedProfile ? setFlags(reportedProfile, false, true) : void 0
+                        }
+                      >
+                        Ban profile
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          reportedProfile ? setFlags(reportedProfile, false, false) : void 0
+                        }
+                      >
+                        Unban
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() =>
+                          setReportStatus(rep.id, rep.status === "open" ? "reviewed" : "open")
+                        }
+                      >
+                        {rep.status === "open" ? "Mark reviewed" : "Reopen"}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => deleteReport(rep.id)}>
+                        Delete report
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </TabsContent>
