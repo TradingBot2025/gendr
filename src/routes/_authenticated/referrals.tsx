@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useMe, createReferral, type Referral } from "@/lib/data";
+import { useMe, type Referral } from "@/lib/data";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Link, Share, Copy } from "lucide-react";
+import { Share, Copy } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/referrals")({
   head: () => ({
@@ -19,8 +18,6 @@ export const Route = createFileRoute("/_authenticated/referrals")({
 
 function Referrals() {
   const { data: me } = useMe();
-  const [code, setCode] = useState("");
-  const [creating, setCreating] = useState(false);
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [autoLink, setAutoLink] = useState("");
   const [copied, setCopied] = useState(false);
@@ -32,44 +29,6 @@ function Referrals() {
       setAutoLink(link);
     }
   }, [me?.profile?.username]);
-
-  const create = async () => {
-    if (!code.trim()) return;
-    setCreating(true);
-    try {
-      await createReferral(code.trim());
-      toast.success("Referral code created");
-      setCode("");
-      load();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      toast.error(message ?? "Failed");
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const load = async () => {
-    const { data } = await supabase
-      .from("referrals")
-      .select("*")
-      .eq("referrer_id", me!.user.id)
-      .order("created_at", { ascending: false });
-    setReferrals(data ?? []);
-  };
-
-  const share = (c: string) => {
-    const url = `${window.location.origin}/auth?ref=${c}`;
-    if (navigator.share) {
-      navigator.share({ title: "Join Gender", text: "Join me on Gender dating!", url });
-    } else {
-      navigator.clipboard.writeText(url).then(() => {
-        toast.success("Link copied");
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
-    }
-  };
 
   const shareAutoLink = () => {
     if (!autoLink) return;
@@ -83,6 +42,23 @@ function Referrals() {
       });
     }
   };
+
+  // Load people who joined via your link.
+  useEffect(() => {
+    if (!me) return;
+    let alive = true;
+    supabase
+      .from("referrals")
+      .select("*")
+      .eq("referrer_id", me.user.id)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        if (alive) setReferrals((data as Referral[] | null) ?? []);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [me]);
 
   if (!me) return null;
 
@@ -122,37 +98,6 @@ function Referrals() {
         ) : (
           <div className="flex items-center gap-2 bg-muted rounded-xl p-3 text-muted-foreground">
             <span>Complete your profile to get your referral link</span>
-          </div>
-        )}
-      </section>
-
-      {/* Optional: Custom referral codes */}
-      <section className="rounded-3xl border bg-card p-6 shadow-soft">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Custom referral codes (optional)</h2>
-          <span className="inline-flex items-center gap-1 rounded-full bg-accent px-3 py-1 text-xs text-accent-foreground font-medium">
-            Advanced
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="e.g. JOIN2024"
-            className="flex-1"
-          />
-          <Button variant="hero" disabled={creating} onClick={create}>
-            {creating ? "Creating…" : "Create code"}
-          </Button>
-        </div>
-        {code && (
-          <div className="mt-4 flex items-center gap-2 bg-muted rounded-xl p-3">
-            <span className="font-mono text-sm">
-              {window.location.origin}/auth?ref={code}
-            </span>
-            <Button size="icon" variant="ghost" onClick={() => share(code)}>
-              <Share className="h-4 w-4" />
-            </Button>
           </div>
         )}
       </section>
