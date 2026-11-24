@@ -387,8 +387,9 @@ function ProfilePage() {
       try {
         const mod = await moderateImage({ data: { path } });
         explicit = !!mod.explicit;
-      } catch {
+      } catch (err) {
         // Fail open: if moderation is unavailable, respect the user's choice.
+        console.error("[moderation] check failed:", err);
       }
       let albumId: string | null = uploadAlbum || null;
       let isPrivate = !!uploadAlbum;

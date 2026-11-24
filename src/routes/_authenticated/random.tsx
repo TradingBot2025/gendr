@@ -220,9 +220,7 @@ function Random() {
                 .select("display_name")
                 .eq("id", peerId)
                 .maybeSingle()
-                .then(({ data: peer }) =>
-                  beginWithPeer(peerId, peer?.display_name ?? "Stranger"),
-                );
+                .then(({ data: peer }) => beginWithPeer(peerId, peer?.display_name ?? "Stranger"));
             } else {
               callRef.current.setAutoAccept(true);
             }
