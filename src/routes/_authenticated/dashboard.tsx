@@ -14,6 +14,7 @@ import cover from "@/assets/dashboard-cover.jpg";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned } from "@/lib/data";
 import { ProfileCard } from "@/components/app/ProfileCard";
+import { InstallApp } from "@/components/app/InstallApp";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
@@ -147,6 +148,8 @@ function Dashboard() {
           </div>
         </div>
       </section>
+
+      <InstallApp variant="banner" />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (

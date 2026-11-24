@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BadgeCheck, MessageCircle, Shuffle, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { InstallApp } from "@/components/app/InstallApp";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -82,6 +83,10 @@ function Index() {
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="py-8">
+          <InstallApp variant="section" />
         </section>
       </main>
     </div>
