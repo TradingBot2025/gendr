@@ -258,13 +258,41 @@ export function useReports() {
   return useQuery({
     queryKey: ["reports"],
     queryFn: async () => {
-      const { data } = await supabase
+      // Fetch reports raw — do NOT rely on a PostgREST table embed
+      // (profiles!reports_reporter_id_fkey). If that embed errors for any reason
+      // (constraint name drift, RLS), the entire query returns null and the
+      // admin reports tab renders blank — which is exactly "reports not showing".
+      const { data, error } = await supabase
         .from("reports")
-        .select(
-          "*, reporter:profiles!reports_reporter_id_fkey(display_name,username), reported:profiles!reports_reported_id_fkey(display_name,username)",
-        )
+        .select("*")
         .order("created_at", { ascending: false });
-      return data ?? [];
+      if (error) throw error;
+      const reports = (data ?? []) as Array<Record<string, unknown>>;
+      // Resolve reporter/reported names from profiles in a second query (admins
+      // can read all profiles), merged in by id.
+      const ids = Array.from(
+        new Set(
+          reports.flatMap((r) => [r.reporter_id as string, r.reported_id as string]).filter(Boolean),
+        ),
+      );
+      const byId = new Map<string, { display_name?: string; username?: string }>();
+      if (ids.length) {
+        const { data: profs } = await supabase
+          .from("profiles")
+          .select("id,display_name,username")
+          .in("id", ids);
+        (profs ?? []).forEach((p) =>
+          byId.set(p.id as string, {
+            display_name: (p as { display_name?: string }).display_name ?? undefined,
+            username: (p as { username?: string }).username ?? undefined,
+          }),
+        );
+      }
+      return reports.map((r) => ({
+        ...r,
+        reporter: byId.get(r.reporter_id as string) ?? null,
+        reported: byId.get(r.reported_id as string) ?? null,
+      }));
     },
   });
 }
