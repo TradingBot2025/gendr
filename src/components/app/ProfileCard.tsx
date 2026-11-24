@@ -1,5 +1,5 @@
 import { BadgeCheck, MapPin, ChevronRight } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { ageOf, useCoverPhoto, type Profile, type PublicProfile } from "@/lib/data";
 import { usePresence } from "@/lib/presence";
@@ -22,7 +22,7 @@ function getAge(p: ProfileLike): number | null {
   return null;
 }
 
-export function ProfileCard({
+export const ProfileCard = memo(function ProfileCard({
   p,
   photo,
   action,
@@ -63,6 +63,7 @@ export function ProfileCard({
             alt={p.display_name ?? ""}
             className={`h-full w-full object-cover ${cover.blurred ? "blur-sm" : ""}`}
             loading="lazy"
+            decoding="async"
             onError={(e) => {
               e.currentTarget.style.display = "none";
             }}
@@ -72,6 +73,8 @@ export function ProfileCard({
             src="/profile-placeholder.svg"
             alt="No public profile photo"
             className="h-full w-full object-cover"
+            loading="lazy"
+            decoding="async"
           />
         )}
         {isOnline ? (
@@ -147,4 +150,4 @@ export function ProfileCard({
       {cardContent}
     </div>
   );
-}
+});

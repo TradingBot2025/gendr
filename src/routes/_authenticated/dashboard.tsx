@@ -43,7 +43,10 @@ function Dashboard() {
     enabled: !!uid,
     queryFn: async () => {
       const [{ data: conns }, { data: people }, { data: photos }] = await Promise.all([
-        supabase.from("connections").select("*"),
+        supabase
+          .from("connections")
+          .select("id,requester,addressee,status")
+          .or(`requester.eq.${uid},addressee.eq.${uid}`),
         supabase
           .from("public_profiles")
           .select(
