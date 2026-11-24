@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/data";
+import { registerServiceWorker, showBackgroundNotification } from "@/lib/push";
 import { toast } from "sonner";
 
 export type NotificationType =
@@ -47,9 +48,6 @@ const NotificationContext = createContext<NotificationCtx>({
 
 export const useNotifications = () => useContext(NotificationContext);
 
-// Track notified message IDs to deduplicate between realtime and polling
-const notifiedMessageIds = new Set<string>();
-
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const { data: me } = useMe();
   const uid = me?.user.id;
@@ -57,7 +55,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const lastPolledMessageId = useRef<string | null>(null);
+
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   // Keep the latest path in a ref so the realtime/polling effects can read it
   // without re-subscribing on every navigation (which caused channel churn and
@@ -66,6 +64,25 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     pathRef.current = path;
   }, [path]);
+
+  // Dedup across realtime AND polling so the same event never notifies twice
+  // (in-app and background share this set).
+  const notifiedIds = useRef<Set<string>>(new Set());
+
+  // Per-source "seen" state used by the polling fallback so we never notify
+  // about rows that already existed when the app loaded (the stale-notification
+  // bug). These are primed on the first poll without emitting.
+  const messageSeeded = useRef(false);
+  const lastMessageId = useRef<string | null>(null);
+  const connSeen = useRef<Set<string> | null>(null);
+  const albumSeen = useRef<Set<string> | null>(null);
+
+  // Register the service worker so background notifications and (when
+  // configured) Web Push work.
+  useEffect(() => {
+    if (!uid) return;
+    void registerServiceWorker();
+  }, [uid]);
 
   // Count unread DB messages
   const { data: unreadCount = 0 } = useQuery({
@@ -97,6 +114,41 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
+  // Single funnel for every notification. Deduplicates by id, then:
+  //  - adds it to the in-app list (both foreground and background), and
+  //  - when the tab is visible shows an in-app toast, when hidden shows a native
+  //    OS notification via the service worker (works while minimized).
+  const emit = useCallback(
+    (n: AppNotification) => {
+      if (notifiedIds.current.has(n.id)) return;
+      notifiedIds.current.add(n.id);
+
+      setNotifications((prev) => [n, ...prev.filter((x) => x.id !== n.id)].slice(0, 50));
+
+      const visible = typeof document !== "undefined" && document.visibilityState === "visible";
+      if (visible) {
+        toast(n.title, {
+          description: n.body,
+          action: n.actionUrl
+            ? {
+                label: n.actionLabel ?? "Open",
+                onClick: () => void navigate(n.actionUrl as string),
+              }
+            : undefined,
+          duration: 8000,
+        });
+      } else {
+        void showBackgroundNotification({
+          title: n.title,
+          body: n.body,
+          url: n.actionUrl,
+          tag: n.id,
+        });
+      }
+    },
+    [navigate],
+  );
+
   // Keep online status up to date
   useEffect(() => {
     if (!uid) return;
@@ -120,7 +172,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     };
   }, [uid]);
 
-  // Real-time notifications via Postgres changes
+  // Real-time notifications via Postgres changes. Each handler funnels through
+  // emit() so it benefits from the same dedup + background dispatch as polling.
   useEffect(() => {
     if (!uid) return;
 
@@ -138,10 +191,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           const connId = String(message["connection_id"]);
           if (pathRef.current === `/chat/${connId}`) return; // already in that chat
 
-          const msgId = `msg-${message["id"]}`;
-          if (notifiedMessageIds.has(msgId)) return;
-          notifiedMessageIds.add(msgId);
-
           const { data: sender } = await supabase
             .from("profiles")
             .select("display_name")
@@ -153,28 +202,16 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
               (message["attachment_path"] ? "📎 Sent an attachment" : "New message"),
           );
 
-          setNotifications((prev) => [
-            {
-              id: msgId,
-              type: "message",
-              title: senderName,
-              body,
-              timestamp: new Date(),
-              read: false,
-              actionUrl: `/chat/${connId}`,
-              actionLabel: "Open chat",
-              senderName,
-            },
-            ...prev.slice(0, 49),
-          ]);
-
-          toast(senderName, {
-            description: body,
-            action: {
-              label: "Open",
-              onClick: () => void navigate({ to: "/chat/$id", params: { id: connId } }),
-            },
-            duration: 8000,
+          emit({
+            id: `msg-${message["id"]}`,
+            type: "message",
+            title: senderName,
+            body,
+            timestamp: new Date(),
+            read: false,
+            actionUrl: `/chat/${connId}`,
+            actionLabel: "Open chat",
+            senderName,
           });
         },
       )
@@ -187,22 +224,16 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           void qc.invalidateQueries({ queryKey: ["dashboard"] });
 
           if (eventType === "INSERT" && connection["addressee"] === uid) {
-            toast("New match request", {
-              action: { label: "View", onClick: () => void navigate({ to: "/connections" }) },
+            emit({
+              id: `conn-req-${connection["id"]}`,
+              type: "connection_request",
+              title: "New connection request",
+              body: "Someone wants to connect with you",
+              timestamp: new Date(),
+              read: false,
+              actionUrl: "/connections",
+              actionLabel: "View requests",
             });
-            setNotifications((prev) => [
-              {
-                id: `conn-req-${connection["id"]}`,
-                type: "connection_request",
-                title: "New connection request",
-                body: "Someone wants to connect with you",
-                timestamp: new Date(),
-                read: false,
-                actionUrl: "/connections",
-                actionLabel: "View requests",
-              },
-              ...prev.slice(0, 49),
-            ]);
           }
           if (
             eventType === "UPDATE" &&
@@ -210,25 +241,16 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             connection["status"] === "accepted"
           ) {
             const connId = String(connection["id"]);
-            toast.success("It's a match!", {
-              action: {
-                label: "Chat",
-                onClick: () => void navigate({ to: "/chat/$id", params: { id: connId } }),
-              },
+            emit({
+              id: `conn-acc-${connId}`,
+              type: "connection_accepted",
+              title: "It's a match!",
+              body: "Your connection request was accepted",
+              timestamp: new Date(),
+              read: false,
+              actionUrl: `/chat/${connId}`,
+              actionLabel: "Start chat",
             });
-            setNotifications((prev) => [
-              {
-                id: `conn-acc-${connId}`,
-                type: "connection_accepted",
-                title: "It's a match!",
-                body: "Your connection request was accepted",
-                timestamp: new Date(),
-                read: false,
-                actionUrl: `/chat/${connId}`,
-                actionLabel: "Start chat",
-              },
-              ...prev.slice(0, 49),
-            ]);
           }
         },
       )
@@ -254,22 +276,16 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
               .maybeSingle();
             const albumName = album?.name ?? "Private album";
 
-            toast(`${requesterName} requested access to "${albumName}"`, {
-              action: { label: "Review", onClick: () => void navigate({ to: "/albums" }) },
+            emit({
+              id: `album-req-${request["id"]}`,
+              type: "album_access",
+              title: `${requesterName} requested access`,
+              body: `to "${albumName}"`,
+              timestamp: new Date(),
+              read: false,
+              actionUrl: "/albums",
+              actionLabel: "Review",
             });
-            setNotifications((prev) => [
-              {
-                id: `album-req-${request["id"]}`,
-                type: "album_access",
-                title: `${requesterName} requested access`,
-                body: `to "${albumName}"`,
-                timestamp: new Date(),
-                read: false,
-                actionUrl: "/albums",
-                actionLabel: "Review",
-              },
-              ...prev.slice(0, 49),
-            ]);
           }
           // Notify requester when approved
           if (
@@ -284,30 +300,24 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
               .maybeSingle();
             const albumName = album?.name ?? "Private album";
 
-            toast.success(`Access approved to "${albumName}"`, {
-              action: { label: "View", onClick: () => void navigate({ to: "/albums" }) },
+            emit({
+              id: `album-acc-${request["id"]}`,
+              type: "album_access",
+              title: `Access approved`,
+              body: `to "${albumName}"`,
+              timestamp: new Date(),
+              read: false,
+              actionUrl: "/albums",
+              actionLabel: "View album",
             });
-            setNotifications((prev) => [
-              {
-                id: `album-acc-${request["id"]}`,
-                type: "album_access",
-                title: `Access approved`,
-                body: `to "${albumName}"`,
-                timestamp: new Date(),
-                read: false,
-                actionUrl: "/albums",
-                actionLabel: "View album",
-              },
-              ...prev.slice(0, 49),
-            ]);
           }
         },
       )
       .subscribe((status, err) => {
-        // Realtime (postgres_changes) is a best-effort enhancement: the 8s polling
-        // loop below is a complete fallback for notifications, and calls use a
-        // separate broadcast channel. Don't surface scary "connection error" toasts
-        // for transient realtime hiccups — just log and let polling cover it.
+        // Realtime (postgres_changes) is a best-effort enhancement: the polling
+        // loop below is a complete fallback, and calls use a separate broadcast
+        // channel. Don't surface scary "connection error" toasts for transient
+        // realtime hiccups — just log and let polling cover it.
         if (status === "CHANNEL_ERROR") {
           console.warn("[Realtime] channel error, using polling fallback:", err);
         } else if (status === "TIMED_OUT") {
@@ -325,16 +335,20 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         channelRef.current = null;
       }
     };
-  }, [uid, qc, navigate]);
+  }, [uid, qc, emit]);
 
-  // Fallback polling every 8 seconds for new messages
+  // Polling fallback (every 8s) for when realtime is unavailable. Covers new
+  // messages, connection requests, matches and album-access requests. The first
+  // poll only establishes a baseline — it never notifies about pre-existing
+  // rows (this is the fix for the "old message notified on load" bug).
   useEffect(() => {
     if (!uid) return;
+    let stopped = false;
 
     const poll = async () => {
       try {
-        // Get the latest message from other people
-        const { data: latestMsg, error } = await supabase
+        // --- Messages ---
+        const { data: latestMsg } = await supabase
           .from("messages")
           .select("id, connection_id, sender, body, attachment_path, created_at")
           .neq("sender", uid)
@@ -343,13 +357,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           .limit(1)
           .maybeSingle();
 
-        if (error) throw error;
-
-        if (latestMsg && latestMsg.id !== lastPolledMessageId.current) {
-          lastPolledMessageId.current = latestMsg.id;
-          const msgId = `msg-${latestMsg.id}`;
-
-          if (!notifiedMessageIds.has(msgId)) {
+        if (latestMsg) {
+          if (!messageSeeded.current) {
+            messageSeeded.current = true;
+            lastMessageId.current = latestMsg.id;
+          } else if (latestMsg.id !== lastMessageId.current) {
+            lastMessageId.current = latestMsg.id;
             const connId = String(latestMsg.connection_id);
             if (pathRef.current !== `/chat/${connId}`) {
               const { data: sender } = await supabase
@@ -362,46 +375,176 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                 latestMsg.body ??
                   (latestMsg.attachment_path ? "📎 Sent an attachment" : "New message"),
               );
-
-              notifiedMessageIds.add(msgId);
-
-              setNotifications((prev) => [
-                {
-                  id: msgId,
-                  type: "message",
-                  title: senderName,
-                  body,
-                  timestamp: new Date(),
-                  read: false,
-                  actionUrl: `/chat/${connId}`,
-                  actionLabel: "Open chat",
-                  senderName,
-                },
-                ...prev.slice(0, 49),
-              ]);
-
-              toast(senderName, {
-                description: body,
-                action: {
-                  label: "Open",
-                  onClick: () => void navigate({ to: "/chat/$id", params: { id: connId } }),
-                },
-                duration: 8000,
+              emit({
+                id: `msg-${latestMsg.id}`,
+                type: "message",
+                title: senderName,
+                body,
+                timestamp: new Date(latestMsg.created_at),
+                read: false,
+                actionUrl: `/chat/${connId}`,
+                actionLabel: "Open chat",
+                senderName,
               });
-            } else {
-              // Still track it as notified to avoid duplicate when leaving chat
-              notifiedMessageIds.add(msgId);
+              void qc.invalidateQueries({ queryKey: ["unread-messages"] });
+              void qc.invalidateQueries({ queryKey: ["inbox"] });
+            }
+          }
+        }
+
+        // --- Connections (requests + matches) ---
+        const { data: conns } = await supabase
+          .from("connections")
+          .select("id, requester, addressee, status, created_at")
+          .or(`requester.eq.${uid},addressee.eq.${uid}`)
+          .order("created_at", { ascending: false })
+          .limit(40);
+
+        if (conns) {
+          if (connSeen.current === null) {
+            connSeen.current = new Set<string>();
+            for (const c of conns) {
+              // Seed only the states that already exist so we don't re-notify,
+              // while leaving transitions (pending→accepted) detectable later.
+              if (c.addressee === uid && c.status === "pending") {
+                connSeen.current.add(`conn-req-${c.id}`);
+              }
+              if (c.requester === uid && c.status === "accepted") {
+                connSeen.current.add(`conn-acc-${c.id}`);
+              }
+            }
+          } else {
+            let changed = false;
+            for (const c of conns) {
+              if (
+                c.addressee === uid &&
+                c.status === "pending" &&
+                !connSeen.current.has(`conn-req-${c.id}`)
+              ) {
+                connSeen.current.add(`conn-req-${c.id}`);
+                changed = true;
+                emit({
+                  id: `conn-req-${c.id}`,
+                  type: "connection_request",
+                  title: "New connection request",
+                  body: "Someone wants to connect with you",
+                  timestamp: new Date(c.created_at),
+                  read: false,
+                  actionUrl: "/connections",
+                  actionLabel: "View requests",
+                });
+              }
+              if (
+                c.requester === uid &&
+                c.status === "accepted" &&
+                !connSeen.current.has(`conn-acc-${c.id}`)
+              ) {
+                connSeen.current.add(`conn-acc-${c.id}`);
+                changed = true;
+                emit({
+                  id: `conn-acc-${c.id}`,
+                  type: "connection_accepted",
+                  title: "It's a match!",
+                  body: "Your connection request was accepted",
+                  timestamp: new Date(c.created_at),
+                  read: false,
+                  actionUrl: `/chat/${c.id}`,
+                  actionLabel: "Start chat",
+                });
+              }
+            }
+            if (changed) {
+              void qc.invalidateQueries({ queryKey: ["connections"] });
+              void qc.invalidateQueries({ queryKey: ["discover"] });
+              void qc.invalidateQueries({ queryKey: ["dashboard"] });
+            }
+          }
+        }
+
+        // --- Album access requests (owner side + requester approvals) ---
+        const { data: albumReqs } = await supabase
+          .from("album_access_requests")
+          .select("id, album_id, requester_id, status, created_at");
+        if (albumReqs && albumReqs.length) {
+          const albumIds = Array.from(new Set(albumReqs.map((r) => r.album_id)));
+          const { data: albumRows } = await supabase
+            .from("photo_albums")
+            .select("id, name")
+            .in("id", albumIds);
+          const albumNames = new Map<string, string>(
+            (albumRows ?? []).map((a) => [a.id, a.name] as [string, string]),
+          );
+          const nameFor = (id: string) => albumNames.get(id) ?? "Private album";
+
+          if (albumSeen.current === null) {
+            albumSeen.current = new Set<string>();
+            for (const r of albumReqs) {
+              if (r.requester_id !== uid) {
+                albumSeen.current.add(`album-req-${r.id}`);
+              }
+              if (r.requester_id === uid && r.status === "approved") {
+                albumSeen.current.add(`album-acc-${r.id}`);
+              }
+            }
+          } else {
+            let changed = false;
+            for (const r of albumReqs) {
+              if (
+                r.requester_id !== uid &&
+                r.status === "pending" &&
+                !albumSeen.current.has(`album-req-${r.id}`)
+              ) {
+                albumSeen.current.add(`album-req-${r.id}`);
+                changed = true;
+                emit({
+                  id: `album-req-${r.id}`,
+                  type: "album_access",
+                  title: "New album access request",
+                  body: `Someone requested access to "${nameFor(r.album_id)}"`,
+                  timestamp: new Date(r.created_at),
+                  read: false,
+                  actionUrl: "/albums",
+                  actionLabel: "Review",
+                });
+              }
+              if (
+                r.requester_id === uid &&
+                r.status === "approved" &&
+                !albumSeen.current.has(`album-acc-${r.id}`)
+              ) {
+                albumSeen.current.add(`album-acc-${r.id}`);
+                changed = true;
+                emit({
+                  id: `album-acc-${r.id}`,
+                  type: "album_access",
+                  title: "Access approved",
+                  body: `to "${nameFor(r.album_id)}"`,
+                  timestamp: new Date(r.created_at),
+                  read: false,
+                  actionUrl: "/albums",
+                  actionLabel: "View album",
+                });
+              }
+            }
+            if (changed) {
+              void qc.invalidateQueries({ queryKey: ["album-access"] });
+              void qc.invalidateQueries({ queryKey: ["profile-view"] });
             }
           }
         }
       } catch (err) {
-        console.error("[Polling] Error fetching new messages:", err);
+        if (!stopped) console.error("[Polling] notification poll failed:", err);
       }
     };
 
+    // Run once immediately to prime the baseline, then every 8s.
+    void poll();
     const interval = setInterval(poll, 8000);
-    return () => clearInterval(interval);
-  }, [uid, navigate]);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [uid, qc, emit]);
 
   return (
     <NotificationContext.Provider
