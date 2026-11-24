@@ -38,9 +38,24 @@ export function MediaView({
     if (v.srcObject !== stream) v.srcObject = stream;
     if (!stream) return;
     const play = () => {
-      v.play().catch(() => {});
+      const p = v.play();
+      if (p && typeof p.catch === "function") p.catch(() => {});
     };
+    // Try immediately and again on every media event. On mobile, autoplay with
+    // sound is blocked until frames arrive AND/OR the user has interacted, so a
+    // single play() attempt often silently fails and the remote video stays
+    // black even though the call is connected. Retrying on these events makes
+    // the remote video start as soon as it can.
     play();
+    const events = ["loadedmetadata", "canplay", "canplaythrough", "playing", "stalled", "suspend"];
+    events.forEach((ev) => v.addEventListener(ev, play));
+    // Also poll a few times for the first ~6s, in case no media event fires.
+    let tries = 0;
+    const poll = setInterval(() => {
+      tries += 1;
+      play();
+      if (tries >= 12) clearInterval(poll);
+    }, 500);
     // Autoplay with sound can be blocked on mobile until a user gesture. Instead
     // of permanently muting (which loses the remote audio), retry on the next
     // tap/key so audio recovers as soon as the user interacts.
@@ -53,6 +68,8 @@ export function MediaView({
       document.addEventListener("keydown", unlock, { once: true });
     }
     return () => {
+      clearInterval(poll);
+      events.forEach((ev) => v.removeEventListener(ev, play));
       if (!muted) {
         document.removeEventListener("pointerdown", unlock);
         document.removeEventListener("keydown", unlock);
