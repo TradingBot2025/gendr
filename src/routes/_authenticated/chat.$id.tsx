@@ -29,6 +29,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos, type Message } from "@/lib/data";
+import { notifyUser } from "@/lib/push-notify";
+import { CallAvailability } from "@/components/app/CallAvailability";
 import { useCall } from "@/lib/calls";
 import {
   playNotificationSound,
@@ -348,6 +350,10 @@ function Chat() {
     );
   if (!info || !uid) return <div className="p-8 text-center text-muted-foreground">Loading…</div>;
   const name = info.peer?.display_name ?? "Match";
+  const peerFlags = info.peer as
+    { voice_call_enabled?: boolean; video_call_enabled?: boolean } | null | undefined;
+  const peerVoice = !!peerFlags?.voice_call_enabled;
+  const peerVideo = !!peerFlags?.video_call_enabled;
   const disappearSeconds = info.disappearSeconds ?? 86400;
   const disappearLabel = formatDisappear(disappearSeconds) ?? "24 hours";
 
@@ -375,6 +381,14 @@ function Chat() {
     });
     if (error) toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["messages", id] });
+    // Let the recipient's device show a native notification even if the app is
+    // closed (best-effort; ignores when push isn't configured).
+    void notifyUser(info.pid, {
+      title: me?.profile?.display_name ?? "New message",
+      body: fields.body ?? (fields.attachment_path ? "📎 Sent an attachment" : "New message"),
+      url: `/chat/${id}`,
+      tag: `msg-${Date.now()}`,
+    });
   };
 
   const setChatTimer = async (seconds: number) => {
@@ -562,12 +576,22 @@ function Chat() {
           params={{ username: info.peer?.username ?? info.pid }}
           className="flex min-w-0 flex-1 items-center gap-2"
         >
-          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-muted">
+          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-muted">
             {info.photo && purls[info.photo] ? (
               <img src={purls[info.photo]} alt={name} className="h-full w-full object-cover" />
             ) : (
               <span className="flex h-full items-center justify-center">{name[0]}</span>
             )}
+            <span
+              className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card ${
+                info.peer?.is_online ||
+                (info.peer?.last_seen_at &&
+                  Date.now() - new Date(info.peer.last_seen_at).getTime() < 5 * 60 * 1000)
+                  ? "bg-green-500"
+                  : "bg-red-500"
+              }`}
+              aria-label={info.peer?.is_online ? "Online" : "Offline"}
+            />
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate font-semibold">{name}</div>
@@ -580,24 +604,30 @@ function Chat() {
             </div>
           </div>
         </Link>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="shrink-0"
-          onClick={() => call.start(info.pid, name, false)}
-          aria-label="Voice call"
-        >
-          <Phone />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="shrink-0"
-          onClick={() => call.start(info.pid, name, true)}
-          aria-label="Video call"
-        >
-          <Video />
-        </Button>
+        {peerVoice && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="shrink-0"
+            onClick={() => call.start(info.pid, name, false)}
+            aria-label="Voice call"
+            title="Voice call"
+          >
+            <Phone />
+          </Button>
+        )}
+        {peerVideo && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="shrink-0"
+            onClick={() => call.start(info.pid, name, true)}
+            aria-label="Video call"
+            title="Video call"
+          >
+            <Video />
+          </Button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -694,6 +724,7 @@ function Chat() {
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
+      <CallAvailability />
 
       <Dialog open={expNotice} onOpenChange={setExpNotice}>
         <DialogContent>

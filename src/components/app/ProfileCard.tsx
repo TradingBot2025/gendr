@@ -29,7 +29,13 @@ export function ProfileCard({
   const age = getAge(p);
   const cover = useCoverPhoto(p.id);
   const image = cover.url ?? (!cover.blurred ? photo : undefined);
-  const isOnline = "is_online" in p ? !!p.is_online : false;
+  // Consider a user online if the live flag is set OR they were active in the
+  // last 5 minutes (is_online can go stale when a tab closes abruptly).
+  const lastSeen =
+    "last_seen_at" in p ? (p as { last_seen_at?: string | null }).last_seen_at : null;
+  const isOnline =
+    ("is_online" in p ? !!p.is_online : false) ||
+    (!!lastSeen && Date.now() - new Date(lastSeen).getTime() < 5 * 60 * 1000);
 
   const cardContent = (
     <>
@@ -59,8 +65,18 @@ export function ProfileCard({
             className="h-full w-full object-cover"
           />
         )}
-        {isOnline && (
-          <span className="absolute right-2 top-2 z-20 h-3 w-3 rounded-full border-2 border-card bg-green-500" />
+        {isOnline ? (
+          <span
+            className="absolute right-2 top-2 z-20 h-3 w-3 rounded-full border-2 border-card bg-green-500"
+            title="Online"
+            aria-label="Online"
+          />
+        ) : (
+          <span
+            className="absolute right-2 top-2 z-20 h-3 w-3 rounded-full border-2 border-card bg-red-500"
+            title="Offline"
+            aria-label="Offline"
+          />
         )}
         <div
           className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent text-stage-foreground ${compact ? "p-2" : "p-4"}`}

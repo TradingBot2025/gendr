@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, logProfileView, reportProfile } from "@/lib/data";
+import { notifyUser } from "@/lib/push-notify";
 import { useCall } from "@/lib/calls";
 import { Button } from "@/components/ui/button";
 import {
@@ -190,6 +191,22 @@ function ProfileView() {
       const conn = conns?.[0];
       const isConnected = conn?.status === "accepted";
 
+      // Whether this member has enabled voice / video calling. Read from the
+      // profiles table (the public_profiles view doesn't expose these columns).
+      const { data: callRow } = await supabase
+        .from("profiles")
+        .select("voice_call_enabled, video_call_enabled")
+        .eq("id", p.id)
+        .maybeSingle();
+      const callFlagsRow = callRow as {
+        voice_call_enabled?: boolean;
+        video_call_enabled?: boolean;
+      } | null;
+      const callFlags = {
+        voice: !!callFlagsRow?.voice_call_enabled,
+        video: !!callFlagsRow?.video_call_enabled,
+      };
+
       const { data: allPhotos } = await supabase
         .from("photos")
         .select("*")
@@ -240,6 +257,7 @@ function ProfileView() {
         connections: conns ?? [],
         albumRequests: requestsMap,
         isConnected,
+        callFlags,
       };
     },
   });
@@ -378,6 +396,12 @@ function ProfileView() {
     setAlbumRequests((prev) => ({ ...prev, [albumId]: { status: "pending", id: "" } }));
     toast.success("Access request sent");
     qc.invalidateQueries({ queryKey: ["profile-view", username] });
+    void notifyUser(p.id, {
+      title: me?.profile?.display_name ?? "Someone",
+      body: "requested access to your private album",
+      url: "/albums",
+      tag: "album-request",
+    });
   };
 
   const handleMoveToAlbum = async (photoId: string, albumId: string | null) => {
@@ -769,6 +793,8 @@ function ProfileView() {
                         className="h-11 w-11 shrink-0 rounded-full"
                         onClick={() => call.start(p.id, p.display_name, false)}
                         aria-label="Voice call"
+                        disabled={!profile.callFlags.voice}
+                        title={profile.callFlags.voice ? "Voice call" : "Voice calls are off"}
                       >
                         <Phone className="h-5 w-5" />
                       </Button>
@@ -777,6 +803,8 @@ function ProfileView() {
                         className="h-11 w-11 shrink-0 rounded-full"
                         onClick={() => call.start(p.id, p.display_name, true)}
                         aria-label="Video call"
+                        disabled={!profile.callFlags.video}
+                        title={profile.callFlags.video ? "Video call" : "Video calls are off"}
                       >
                         <Video className="h-5 w-5" />
                       </Button>

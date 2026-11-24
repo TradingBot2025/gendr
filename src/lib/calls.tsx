@@ -41,6 +41,15 @@ type Ctx = CallState & {
   setAutoAccept: (v: boolean) => void;
   toggleMic: () => boolean;
   toggleCam: () => boolean;
+  // Switch between front and back camera (video calls). No-op if unsupported.
+  flipCamera: () => Promise<void>;
+  // Route remote audio through a different output (speaker/earpiece). Best-effort.
+  speakerOn: boolean;
+  speakerSupported: boolean;
+  toggleSpeaker: () => Promise<void>;
+  // Register the <video>/<audio> element playing the remote stream so the
+  // speaker toggle can retarget its output device.
+  setRemoteMedia: (el: HTMLMediaElement | null) => void;
 };
 
 const CallCtx = createContext<Ctx | null>(null);
@@ -74,6 +83,11 @@ export function CallProvider({
   const pendingOffer = useRef<Signal | null>(null);
   const iceQueue = useRef<RTCIceCandidateInit[]>([]);
   const autoAccept = useRef(false);
+  const facingRef = useRef<"user" | "environment">("user");
+  const remoteMediaRef = useRef<HTMLMediaElement | null>(null);
+  const [speakerOn, setSpeakerOn] = useState(false);
+  const speakerSupported =
+    typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
   const turnCredsRef = useRef<{ username: string; credential: string; urls: string[] } | null>(
     null,
   );
@@ -100,6 +114,7 @@ export function CallProvider({
     const servers: RTCIceServer[] = [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun.cloudflare.com:3478" },
     ];
 
     if (turnCredsRef.current) {
@@ -135,6 +150,9 @@ export function CallProvider({
     iceQueue.current = [];
     setLocal(null);
     setRemote(null);
+    setSpeakerOn(false);
+    facingRef.current = "user";
+    remoteMediaRef.current = null;
     setState(IDLE);
   }, []);
 
@@ -187,7 +205,20 @@ export function CallProvider({
   );
 
   const getMedia = async (video: boolean) => {
-    const m = await navigator.mediaDevices.getUserMedia({ audio: true, video });
+    const m = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: video
+        ? {
+            facingMode: { ideal: facingRef.current },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          }
+        : false,
+    });
     localRef.current = m;
     setLocal(m);
     return m;
@@ -313,6 +344,61 @@ export function CallProvider({
     return !!t?.enabled;
   };
 
+  const setRemoteMedia = useCallback((el: HTMLMediaElement | null) => {
+    remoteMediaRef.current = el;
+  }, []);
+
+  // Switch camera (front <-> back) on video calls by replacing the outgoing
+  // video track on the peer connection and refreshing the local preview.
+  const flipCamera = useCallback(async () => {
+    const conn = pc.current;
+    const local = localRef.current;
+    if (!conn || !local) return;
+    const next: "user" | "environment" = facingRef.current === "user" ? "environment" : "user";
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: next } },
+      });
+      const newTrack = newStream.getVideoTracks()[0];
+      if (!newTrack) return;
+      for (const sender of conn.getSenders()) {
+        if (sender.track && sender.track.kind === "video") {
+          await sender.replaceTrack(newTrack).catch(() => {});
+        }
+      }
+      const oldTrack = local.getVideoTracks()[0];
+      if (oldTrack) {
+        local.removeTrack(oldTrack);
+        oldTrack.stop();
+      }
+      local.addTrack(newTrack);
+      setLocal(new MediaStream(local.getTracks()));
+      facingRef.current = next;
+    } catch {
+      toast.error("Could not switch camera");
+    }
+  }, []);
+
+  // Best-effort speaker/earpiece switch for the remote audio output. Works on
+  // browsers that expose HTMLMediaElement.setSinkId with >1 audio output.
+  const toggleSpeaker = useCallback(async () => {
+    const el = remoteMediaRef.current as
+      (HTMLMediaElement & { setSinkId?: (id: string) => Promise<void> }) | null;
+    if (!el || typeof el.setSinkId !== "function") return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const outputs = devices.filter((d) => d.kind === "audiooutput");
+      if (outputs.length < 2) return;
+      const nextOn = !speakerOn;
+      const target = outputs[nextOn ? 1 % outputs.length : 0];
+      await el.setSinkId(target.deviceId);
+      setSpeakerOn(nextOn);
+    } catch {
+      // ignore — device selection unsupported
+    }
+  }, [speakerOn]);
+
   return (
     <CallCtx.Provider
       value={{
@@ -328,6 +414,11 @@ export function CallProvider({
         },
         toggleMic,
         toggleCam,
+        flipCamera,
+        speakerOn,
+        speakerSupported,
+        toggleSpeaker,
+        setRemoteMedia,
       }}
     >
       {children}

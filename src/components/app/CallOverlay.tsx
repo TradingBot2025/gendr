@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff } from "lucide-react";
+import {
+  Mic,
+  MicOff,
+  Phone,
+  PhoneOff,
+  Video,
+  VideoOff,
+  SwitchCamera,
+  Volume2,
+  Volume1,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCall } from "@/lib/calls";
 import { playRingingSound, stopRingingSound, unlockAudioContext } from "@/lib/audio";
@@ -8,25 +18,42 @@ export function MediaView({
   stream,
   muted,
   className,
+  onElement,
 }: {
   stream: MediaStream | null;
   muted?: boolean;
   className?: string;
+  onElement?: (el: HTMLMediaElement | null) => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
+    if (onElement) onElement(v);
     if (v.srcObject !== stream) v.srcObject = stream;
-    if (stream) {
-      // Autoplay can be blocked (especially mobile with audio). Try to play, and
-      // if it fails, mute and retry so at least the video renders.
-      v.play().catch(() => {
-        v.muted = true;
-        v.play().catch(() => {});
-      });
+    if (!stream) return;
+    const play = () => {
+      v.play().catch(() => {});
+    };
+    play();
+    // Autoplay with sound can be blocked on mobile until a user gesture. Instead
+    // of permanently muting (which loses the remote audio), retry on the next
+    // tap/key so audio recovers as soon as the user interacts.
+    const unlock = () => {
+      v.muted = false;
+      play();
+    };
+    if (!muted) {
+      document.addEventListener("pointerdown", unlock, { once: true });
+      document.addEventListener("keydown", unlock, { once: true });
     }
-  }, [stream]);
+    return () => {
+      if (!muted) {
+        document.removeEventListener("pointerdown", unlock);
+        document.removeEventListener("keydown", unlock);
+      }
+    };
+  }, [stream, muted, onElement]);
   return <video ref={ref} autoPlay playsInline muted={muted} className={className} />;
 }
 
@@ -35,7 +62,7 @@ export function CallControls() {
   const [mic, setMic] = useState(true);
   const [cam, setCam] = useState(true);
   return (
-    <div className="flex items-center justify-center gap-3">
+    <div className="flex flex-wrap items-center justify-center gap-3">
       <Button
         size="icon"
         variant="secondary"
@@ -45,6 +72,30 @@ export function CallControls() {
       >
         {mic ? <Mic /> : <MicOff />}
       </Button>
+      {!c.video && c.speakerSupported && (
+        <Button
+          size="icon"
+          variant={c.speakerOn ? "default" : "secondary"}
+          className="h-12 w-12 rounded-full"
+          onClick={() => void c.toggleSpeaker()}
+          aria-label="Toggle speaker"
+          title="Speaker"
+        >
+          {c.speakerOn ? <Volume2 /> : <Volume1 />}
+        </Button>
+      )}
+      {c.video && (
+        <Button
+          size="icon"
+          variant="secondary"
+          className="h-12 w-12 rounded-full"
+          onClick={() => void c.flipCamera()}
+          aria-label="Switch camera"
+          title="Switch camera"
+        >
+          <SwitchCamera />
+        </Button>
+      )}
       {c.video && (
         <Button
           size="icon"
@@ -108,6 +159,7 @@ export function CallOverlay() {
             {/* Keep the element rendered (not display:none) so audio plays on mobile. */}
             <MediaView
               stream={c.remote}
+              onElement={c.setRemoteMedia}
               className="pointer-events-none absolute h-px w-px opacity-0"
             />
             <div className="flex h-full flex-col items-center justify-center gap-4">
