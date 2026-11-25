@@ -346,13 +346,23 @@ function Messages() {
     if (myRequests) setMyApprovedRequests(myRequests);
   }, [myRequests]);
 
-  // Apply the active filter chip to the inbox.
-  const filteredInbox = (inboxData ?? []).filter((d) => {
-    if (filter === "unread") return d.unreadCount > 0;
-    if (filter === "favorite") return favorites.has(d.connection.id);
-    if (filter === "online") return d.profile ? presence.isOnline(d.profile.id) : false;
-    return true;
-  });
+  // Apply the active filter chip to the inbox, then sort so the conversation
+  // with the most recent message is always at the TOP. When a new message
+  // arrives, NotificationProvider invalidates ["inbox"], this refetches, and the
+  // conversation jumps to the top automatically (no manual refresh). Conversations
+  // with no messages yet fall to the bottom.
+  const filteredInbox = (inboxData ?? [])
+    .filter((d) => {
+      if (filter === "unread") return d.unreadCount > 0;
+      if (filter === "favorite") return favorites.has(d.connection.id);
+      if (filter === "online") return d.profile ? presence.isOnline(d.profile.id) : false;
+      return true;
+    })
+    .sort((a, b) => {
+      const ta = a.lastMessage ? new Date(a.lastMessage.created_at).getTime() : 0;
+      const tb = b.lastMessage ? new Date(b.lastMessage.created_at).getTime() : 0;
+      return tb - ta;
+    });
 
   const urls = useSigned("photos", [
     ...(inboxData ?? []).map((d) => d.photo),

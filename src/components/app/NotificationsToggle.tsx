@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   enableNotifications,
   notificationPermission,
+  subscribeToPush,
   type NotificationPermissionLike,
 } from "@/lib/push";
 
@@ -24,6 +25,9 @@ export function NotificationsToggle() {
       const result = await enableNotifications();
       setPerm(notificationPermission());
       if (result === "granted") {
+        // Register this device for Web Push so alerts arrive even when the app
+        // is fully closed (not just minimized).
+        await subscribeToPush();
         toast.success("Notifications enabled on this device");
       } else if (result === "denied") {
         toast.error("Notifications were blocked. Enable them in your browser settings.");

@@ -125,12 +125,20 @@ export function useMe() {
   return useQuery({
     queryKey: ["me"],
     queryFn: async () => {
-      const { data: u } = await supabase.auth.getUser();
-      if (!u.user) return null;
+      // Use getSession() (reads the persisted session from local storage —
+      // effectively instant) instead of getUser(), which makes a BLOCKING network
+      // round-trip to validate the token on every cold load. getUser() was why the
+      // whole app sat on "Loading…" whenever the connection was slow, since the
+      // authenticated shell waits on this query. supabase-js refreshes the token
+      // in the background and server routes re-validate, so the stored session is
+      // safe to trust here (same reasoning as the _authenticated route guard).
+      const { data: u } = await supabase.auth.getSession();
+      const user = u.session?.user;
+      if (!user) return null;
       const [{ data: profile }, { data: roles }, { data: photos }] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", u.user.id).maybeSingle(),
-        supabase.from("user_roles").select("role").eq("user_id", u.user.id),
-        supabase.from("photos").select("*").eq("user_id", u.user.id).order("position"),
+        supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
+        supabase.from("user_roles").select("role").eq("user_id", user.id),
+        supabase.from("photos").select("*").eq("user_id", user.id).order("position"),
       ]);
       const isAdmin = !!roles?.some((r) => r.role === "admin");
       const complete = !!(
@@ -141,7 +149,7 @@ export function useMe() {
         profile.city &&
         (photos?.length ?? 0) > 0
       );
-      return { user: u.user, profile, isAdmin, photos: photos ?? [], complete };
+      return { user, profile, isAdmin, photos: photos ?? [], complete };
     },
   });
 }

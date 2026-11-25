@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos, blockUser, type Message } from "@/lib/data";
+import { sendPushToUser } from "@/lib/push.functions";
 
 import { usePresence } from "@/lib/presence";
 import { useCall } from "@/lib/calls";
@@ -282,6 +283,34 @@ function Chat() {
       ).data ?? [],
   });
 
+  // Real-time updates: when a new message (or a read/unsend update) lands for
+  // THIS conversation, refetch immediately so it appears instantly instead of
+  // waiting up to 2.5s for the poll. The 2.5s poll above stays as a fallback for
+  // when Realtime isn't available. Also keeps the inbox unread badges fresh.
+  useEffect(() => {
+    if (!id) return;
+    const ch = supabase
+      .channel(`chat-messages-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "messages",
+          filter: `connection_id=eq.${id}`,
+        },
+        () => {
+          void qc.invalidateQueries({ queryKey: ["messages", id] });
+          void qc.invalidateQueries({ queryKey: ["inbox"] });
+          void qc.invalidateQueries({ queryKey: ["unread-messages"] });
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [id, qc]);
+
   // Mark incoming messages as read while this chat is open (and whenever new ones
   // arrive). Direct UPDATE on messages is revoked (REVOKE UPDATE ... FROM
   // authenticated), so we must go through the SECURITY DEFINER mark_chat_read RPC —
@@ -392,6 +421,25 @@ function Chat() {
       ...rest,
     });
     if (error) toast.error(error.message);
+    else {
+      // Notify the recipient even if their app is fully closed (Web Push). The
+      // server function no-ops if push isn't configured on this deployment, and
+      // is best-effort: never block sending a message on it.
+      const preview = fields.body?.trim()
+        ? fields.body.trim().slice(0, 120)
+        : fields.attachment_type === "image"
+          ? "Sent a photo"
+          : "Sent an attachment";
+      void sendPushToUser({
+        data: {
+          to: info.pid,
+          title: me?.profile?.display_name || "New message",
+          body: preview,
+          url: `/chat/${id}`,
+          tag: `msg-${id}`,
+        },
+      }).catch(() => {});
+    }
     qc.invalidateQueries({ queryKey: ["messages", id] });
   };
 

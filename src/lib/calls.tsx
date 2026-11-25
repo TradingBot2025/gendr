@@ -10,7 +10,8 @@ import {
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { sendCallSignal, getTurnCredentials } from "@/lib/call-signalling.functions";
+import { getTurnCredentials } from "@/lib/call-signalling.functions";
+import { sendPushToUser } from "@/lib/push.functions";
 
 type Signal = {
   type: "offer" | "answer" | "ice" | "hangup" | "decline";
@@ -82,6 +83,10 @@ export function CallProvider({
   const localRef = useRef<MediaStream | null>(null);
   const pendingOffer = useRef<Signal | null>(null);
   const iceQueue = useRef<RTCIceCandidateInit[]>([]);
+  // One persistent Realtime channel per peer, used to broadcast call signals
+  // (offer/answer/ice/hangup) directly from this browser to the peer's personal
+  // channel. Reused across signals so we only subscribe once per peer.
+  const signalChannels = useRef<Map<string, RealtimeChannel>>(new Map());
   const autoAccept = useRef(false);
   const facingRef = useRef<"user" | "environment">("user");
   const remoteMediaRef = useRef<HTMLMediaElement | null>(null);
@@ -133,15 +138,56 @@ export function CallProvider({
     return servers;
   }, []);
 
-  const send = useCallback(async (to: string, s: Omit<Signal, "from">) => {
-    try {
-      await sendCallSignal({ data: { to, ...s } });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error("Failed to send call signal:", message);
-      // Don't throw - let the call fail naturally
-    }
-  }, []);
+  // Send a call signal DIRECTLY from this browser to the peer's personal channel
+  // (`private-call-<peer>`). The peer is already subscribed to that channel (see
+  // the receiver effect below), so a broadcast published here reaches them.
+  //
+  // Why not a server function: the previous server-side send re-validated the
+  // matchmaking queue by reading the PEER's queue row, which fails under RLS
+  // (you can only read your own row) — so every offer/answer was silently
+  // dropped and calls never connected. Publishing on a PUBLIC channel needs no
+  // DB policies and no server round-trip, and reuses one channel per peer, so
+  // it's both reliable and fast. Media is still end-to-end encrypted (DTLS-SRTP).
+  const send = useCallback(
+    async (to: string, s: Omit<Signal, "from">) => {
+      try {
+        let ch = signalChannels.current.get(to);
+        if (!ch) {
+          ch = supabase.channel(`private-call-${to}`);
+          signalChannels.current.set(to, ch);
+        }
+        // Make sure the channel is joined before the first publish on it.
+        if (ch.state !== "joined") {
+          await new Promise<void>((resolve) => {
+            let done = false;
+            const finish = () => {
+              if (done) return;
+              done = true;
+              resolve();
+            };
+            const t = setTimeout(finish, 3000);
+            ch!.subscribe((status) => {
+              if (
+                status === "SUBSCRIBED" ||
+                status === "CHANNEL_ERROR" ||
+                status === "TIMED_OUT" ||
+                status === "CLOSED"
+              ) {
+                clearTimeout(t);
+                finish();
+              }
+            });
+          });
+        }
+        await ch.send({ type: "broadcast", event: "signal", payload: { ...s, from: userId } });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("Failed to send call signal:", message);
+        // Don't throw - let the call fail naturally
+      }
+    },
+    [userId],
+  );
 
   const cleanup = useCallback(() => {
     pc.current?.close();
@@ -158,76 +204,57 @@ export function CallProvider({
     setState(IDLE);
   }, []);
 
-  // Resolve once ICE gathering is complete (or after a safety timeout). Used for
-  // non-trickle ICE: we embed all candidates in the single offer/answer SDP so
-  // only 2 signals need to travel over the (server-broadcast) signalling channel
-  // instead of one server call per candidate — which was unreliable and left the
-  // remote video black.
-  const waitForIceGathering = useCallback((conn: RTCPeerConnection) => {
-    return new Promise<void>((resolve) => {
-      if (conn.iceGatheringState === "complete") {
-        resolve();
-        return;
-      }
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        conn.removeEventListener("icegatheringstatechange", onchange);
-        clearTimeout(timer);
-        resolve();
+  const makePc = useCallback(
+    (peer: string) => {
+      const conn = new RTCPeerConnection({ iceServers: getIceServers() });
+      // Trickle ICE: send each candidate to the peer as soon as it's discovered.
+      // Now that signalling is a fast browser-to-browser broadcast (no server
+      // round-trip per candidate), this is reliable AND connects faster/more
+      // reliably than waiting for gathering to finish — which is what makes
+      // audio flow on more networks (fewer "connected but silent" calls).
+      conn.onicecandidate = (e) => {
+        if (e.candidate) void send(peer, { type: "ice", candidate: e.candidate.toJSON() });
       };
-      const onchange = () => {
-        if (conn.iceGatheringState === "complete") finish();
+      // Accumulate remote tracks into a single MediaStream. Some browsers (notably
+      // mobile Safari ↔ desktop Chrome) don't populate e.streams[0], so relying on it
+      // leaves the remote stream empty and no video/audio shows. Building the stream
+      // from tracks works across all browsers.
+      const remoteStream = new MediaStream();
+      conn.ontrack = (e) => {
+        remoteStream.addTrack(e.track);
+        setRemote(remoteStream);
       };
-      const timer = setTimeout(finish, 6000);
-      conn.addEventListener("icegatheringstatechange", onchange);
-    });
-  }, []);
-
-  const makePc = useCallback(() => {
-    const conn = new RTCPeerConnection({ iceServers: getIceServers() });
-    // Non-trickle ICE: candidates are gathered into the SDP (see
-    // waitForIceGathering) rather than signalled one-by-one, so we do NOT send
-    // per-candidate signals here.
-    // Accumulate remote tracks into a single MediaStream. Some browsers (notably
-    // mobile Safari ↔ desktop Chrome) don't populate e.streams[0], so relying on it
-    // leaves the remote stream empty and no video/audio shows. Building the stream
-    // from tracks works across all browsers.
-    const remoteStream = new MediaStream();
-    conn.ontrack = (e) => {
-      remoteStream.addTrack(e.track);
-      setRemote(remoteStream);
-    };
-    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    conn.onconnectionstatechange = () => {
-      if (disconnectTimer) {
-        clearTimeout(disconnectTimer);
-        disconnectTimer = null;
-      }
-      if (conn.connectionState === "connected") {
-        // Recovered from a temporary drop — keep the call alive.
-        return;
-      }
-      if (conn.connectionState === "disconnected") {
-        // Mobile networks briefly drop; give it 8s to recover before ending.
-        disconnectTimer = setTimeout(() => {
-          if (pc.current === conn && conn.connectionState !== "connected") {
+      let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+      conn.onconnectionstatechange = () => {
+        if (disconnectTimer) {
+          clearTimeout(disconnectTimer);
+          disconnectTimer = null;
+        }
+        if (conn.connectionState === "connected") {
+          // Recovered from a temporary drop — keep the call alive.
+          return;
+        }
+        if (conn.connectionState === "disconnected") {
+          // Mobile networks briefly drop; give it 8s to recover before ending.
+          disconnectTimer = setTimeout(() => {
+            if (pc.current === conn && conn.connectionState !== "connected") {
+              toast("Call ended");
+              cleanup();
+            }
+          }, 8000);
+        }
+        if (conn.connectionState === "failed") {
+          if (pc.current === conn) {
             toast("Call ended");
             cleanup();
           }
-        }, 8000);
-      }
-      if (conn.connectionState === "failed") {
-        if (pc.current === conn) {
-          toast("Call ended");
-          cleanup();
         }
-      }
-    };
-    pc.current = conn;
-    return conn;
-  }, [getIceServers, cleanup]);
+      };
+      pc.current = conn;
+      return conn;
+    },
+    [getIceServers, send, cleanup],
+  );
 
   const getMedia = async (video: boolean) => {
     const m = await navigator.mediaDevices.getUserMedia({
@@ -259,14 +286,12 @@ export function CallProvider({
     try {
       setState({ status: "outgoing", peerId, peerName, video, random });
       const m = await getMedia(video);
-      const conn = makePc();
+      const conn = makePc(peerId);
       m.getTracks().forEach((t) => conn.addTrack(t, m));
       const offer = await conn.createOffer();
       await conn.setLocalDescription(offer);
-      // Non-trickle: wait until all ICE candidates are gathered into the SDP so
-      // a single offer carries everything. This is far more reliable than firing
-      // one signalling round-trip per candidate.
-      await waitForIceGathering(conn);
+      // Trickle ICE: send the offer immediately; any further ICE candidates are
+      // signalled separately as they're discovered (see makePc.onicecandidate).
       // Include the caller's name so the recipient's incoming-call screen shows
       // who is calling (previously it always fell back to "Someone").
       await send(peerId, {
@@ -276,6 +301,20 @@ export function CallProvider({
         random,
         name: myName,
       });
+      // Ring the recipient even if their app is fully closed (Web Push). The
+      // realtime broadcast above only reaches an open app; this covers the
+      // closed/background case. Best-effort, never blocks the call.
+      if (!random) {
+        void sendPushToUser({
+          data: {
+            to: peerId,
+            title: myName || "Incoming call",
+            body: video ? "Incoming video call" : "Incoming voice call",
+            url: "/",
+            tag: `call-${peerId}`,
+          },
+        }).catch(() => {});
+      }
     } catch {
       toast.error("Could not access microphone/camera");
       cleanup();
@@ -287,13 +326,12 @@ export function CallProvider({
     if (!offer?.sdp) return;
     try {
       const m = await getMedia(!!offer.video);
-      const conn = makePc();
+      const conn = makePc(offer.from);
       m.getTracks().forEach((t) => conn.addTrack(t, m));
       await conn.setRemoteDescription(offer.sdp);
       await flushIce();
       const answer = await conn.createAnswer();
       await conn.setLocalDescription(answer);
-      await waitForIceGathering(conn);
       await send(offer.from, { type: "answer", sdp: conn.localDescription ?? answer });
       setState({ ...stateRef.current, status: "active" });
     } catch {
@@ -319,6 +357,39 @@ export function CallProvider({
   handler.current = async (s: Signal) => {
     const cur = stateRef.current;
     if (s.type === "offer") {
+      // Glare: both random users got matched at the same instant and both sent
+      // an offer. Resolve deterministically — the lower user id wins, the higher
+      // yields (drops its own offer and accepts the lower id's offer). Without
+      // this, both sides would decline each other and the call would never form.
+      if (cur.status === "outgoing" && cur.peerId === s.from) {
+        if (userId < s.from) {
+          // I'm the lower id — my offer wins. Ignore their offer entirely; they
+          // will yield to mine and answer it.
+          return;
+        }
+        // I'm the higher id — yield: tear down my outgoing attempt, then accept
+        // the lower id's offer below.
+        try {
+          pc.current?.close();
+        } catch {
+          /* ignore */
+        }
+        pc.current = null;
+        localRef.current?.getTracks().forEach((t) => t.stop());
+        localRef.current = null;
+        setLocal(null);
+        iceQueue.current = [];
+        pendingOffer.current = s;
+        setState({
+          status: "incoming",
+          peerId: s.from,
+          peerName: s.name ?? "Someone",
+          video: !!s.video,
+          random: !!s.random,
+        });
+        await accept();
+        return;
+      }
       if (cur.status !== "idle") {
         void send(s.from, { type: "decline" });
         return;
@@ -359,13 +430,18 @@ export function CallProvider({
   useEffect(() => {
     // Public channel for receiving call signals (no `private: true`) — works
     // without realtime.messages RLS policies, which aren't guaranteed to be
-    // applied. The caller broadcasts to this same topic.
+    // applied. Callers publish to our `private-call-<userId>` topic; we receive
+    // here and reply on the caller's topic (see `send`).
     const ch = supabase
       .channel(`private-call-${userId}`)
       .on("broadcast", { event: "signal" }, ({ payload }) => handler.current(payload as Signal))
       .subscribe();
+    const channels = signalChannels.current;
     return () => {
       supabase.removeChannel(ch);
+      // Tear down any per-peer send channels opened during this session.
+      channels.forEach((c) => void supabase.removeChannel(c));
+      channels.clear();
     };
   }, [userId]);
 
