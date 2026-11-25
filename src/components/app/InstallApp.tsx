@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Apple, Download, Share, Smartphone, X, MoreVertical } from "lucide-react";
+import { Apple, Download, Share, Smartphone, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
@@ -226,27 +226,17 @@ export function InstallApp({ variant = "section" }: { variant?: "section" | "ban
             <div className="mb-3 flex items-center gap-2 font-semibold">
               <Smartphone className="h-5 w-5" /> Android
             </div>
-            <ol className="space-y-1.5 text-sm text-muted-foreground">
-              <li>1. Open this site in Chrome</li>
-              <li>
-                2. Tap the <MoreVertical className="inline h-4 w-4" /> menu
-              </li>
-              <li>
-                3. Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>
-              </li>
-            </ol>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4 w-full"
-              onClick={handleInstall}
-              disabled={!deferred}
-            >
-              <Download className="mr-2 h-4 w-4" />{" "}
-              {deferred ? "Install Android app" : "Open in Chrome"}
-            </Button>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Android can install directly from Chrome with one tap.
+            <p className="mb-4 text-sm text-muted-foreground">
+              Download the native Android app directly (APK ~10 MB):
+            </p>
+            <a href="/Gender.apk" download className="block w-full">
+              <Button variant="hero" size="lg" className="w-full">
+                <Download className="mr-2 h-5 w-5" /> Download Android App
+              </Button>
+            </a>
+            <p className="mt-3 text-xs text-muted-foreground">
+              After downloading, open the file to install. You may need to enable "Install unknown
+              apps" for your browser in Settings.
             </p>
           </div>
         </div>
