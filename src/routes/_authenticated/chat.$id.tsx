@@ -634,17 +634,16 @@ function Chat() {
   // Record when a message is first opened so the countdown timer starts at
   // open time rather than send time.
   const handleOpenMessage = (m: Message) => {
-      if (!openedAtMsRef.current.has(m.id)) {
-        openedAtMsRef.current.set(m.id, Date.now());
-      }
-      if (m.body && !mine(m)) {
-        // Mark text messages as opened so the expiry logic can use open time.
-        setOpenedTextMsgIds((prev) => {
-          const next = new Set(prev);
-          next.add(m.id);
-          return next;
-        });
-      }
+    if (!openedAtMsRef.current.has(m.id)) {
+      openedAtMsRef.current.set(m.id, Date.now());
+    }
+    if (m.body && !mine(m)) {
+      // Mark text messages as opened so the expiry logic can use open time.
+      setOpenedTextMsgIds((prev) => {
+        const next = new Set(prev);
+        next.add(m.id);
+        return next;
+      });
     }
   };
 
@@ -1348,7 +1347,9 @@ function Chat() {
             )}
             <p className="text-xs text-muted-foreground">
               {viewMode === "normal"
-                ? "This photo stays visible until it expires after 24 hours."
+                ? maxViews === null
+                  ? "This photo stays visible until it expires after 24 hours."
+                  : `The recipient can view this photo ${maxViews} time${maxViews > 1 ? "s" : ""}, then it expires.`
                 : viewMode === "once"
                   ? "The recipient can view this photo once, then it expires."
                   : viewMode === "10s"

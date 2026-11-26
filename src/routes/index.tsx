@@ -1,9 +1,16 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { BadgeCheck, MessageCircle, Shuffle, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallApp } from "@/components/app/InstallApp";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
+  beforeLoad: async () => {
+    // If a session already exists, send the user straight to the dashboard
+    // instead of showing the landing page (with its install prompts).
+    const { data } = await supabase.auth.getSession();
+    if (data.session) throw redirect({ to: "/discover" });
+  },
   head: () => ({
     meta: [
       { title: "Gender — Free dating for every identity" },
