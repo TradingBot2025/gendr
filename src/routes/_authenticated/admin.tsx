@@ -55,6 +55,14 @@ export const Route = createFileRoute("/_authenticated/admin")({
     meta: [
       { title: "Admin — Gender" },
       { name: "description", content: "Manage members, reports, suspensions and verification." },
+
+      { property: "og:title", content: "Admin — Gender" },
+      {
+        property: "og:description",
+        content: "Manage members, reports, suspensions and verification.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Admin,

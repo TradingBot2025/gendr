@@ -181,6 +181,14 @@ export const Route = createFileRoute("/_authenticated/chat/$id")({
         name: "description",
         content: "Chat, share and call your match. Set a disappearing timer for messages.",
       },
+
+      { property: "og:title", content: "Chat — Gender" },
+      {
+        property: "og:description",
+        content: "Chat, share and call your match. Set a disappearing timer for messages.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Chat,
@@ -240,7 +248,8 @@ function Chat() {
   const [photoViewerPhotos, setPhotoViewerPhotos] = useState<Array<{
     id: string;
     path: string;
-    attachment_type?: string;
+    attachment_type: string | null;
+    album_id: string | null;
   }> | null>(null);
   const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
   // Report dialog state
@@ -613,16 +622,19 @@ function Chat() {
       new Date(m.expires_at).getTime() - new Date(m.created_at).getTime() < 60 * 1000;
     if (!timed) {
       const imageMsgs = (msgs ?? []).filter(
-        (msg) =>
-          msg.attachment_type?.startsWith("image/") &&
-          msg.attachment_path &&
-          aurls[msg.attachment_path],
+        (msg): msg is Message & { attachment_path: string } =>
+          !!(
+            msg.attachment_type?.startsWith("image/") &&
+            msg.attachment_path &&
+            aurls[msg.attachment_path]
+          ),
       );
       setPhotoViewerPhotos(
         imageMsgs.map((msg) => ({
           id: msg.id,
           path: msg.attachment_path,
           attachment_type: msg.attachment_type,
+          album_id: null,
         })),
       );
       const idx = imageMsgs.findIndex((msg) => msg.id === m.id);
@@ -634,30 +646,32 @@ function Chat() {
   // Record when a message is first opened so the countdown timer starts at
   // open time rather than send time.
   const handleOpenMessage = (m: Message) => {
-      if (!openedAtMsRef.current.has(m.id)) {
-        openedAtMsRef.current.set(m.id, Date.now());
-      }
-      if (m.body && !mine(m)) {
-        // Mark text messages as opened so the expiry logic can use open time.
-        setOpenedTextMsgIds((prev) => {
-          const next = new Set(prev);
-          next.add(m.id);
-          return next;
-        });
-      }
+    if (!openedAtMsRef.current.has(m.id)) {
+      openedAtMsRef.current.set(m.id, Date.now());
+    }
+    if (m.body && !mine(m)) {
+      // Mark text messages as opened so the expiry logic can use open time.
+      setOpenedTextMsgIds((prev) => {
+        const next = new Set(prev);
+        next.add(m.id);
+        return next;
+      });
     }
   };
 
   // --- Slide-to-delete ---
   const handleSwipeStart = (e: React.TouchEvent, msgId: string) => {
     if (!mineFromMsg(e.currentTarget as Element, msgs, msgId)) return;
-    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    const touch = e.touches[0];
+    if (!touch) return;
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
   };
 
   const handleSwipeMove = (e: React.TouchEvent, msgId: string) => {
-    if (!swipeStartRef.current) return;
-    const dx = e.touches[0].clientX - swipeStartRef.current.x;
-    const dy = e.touches[0].clientY - swipeStartRef.current.y;
+    const touch = e.touches[0];
+    if (!swipeStartRef.current || !touch) return;
+    const dx = touch.clientX - swipeStartRef.current.x;
+    const dy = touch.clientY - swipeStartRef.current.y;
     // Only trigger horizontal swipe on sender's own messages
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
       setSwipedMsgId(msgId);
@@ -700,7 +714,12 @@ function Chat() {
       // Open photo viewer for this message's attachment if it's an image
       if (msg.attachment_path && msg.attachment_type?.startsWith("image/")) {
         setPhotoViewerPhotos([
-          { id: msg.id, path: msg.attachment_path, attachment_type: msg.attachment_type },
+          {
+            id: msg.id,
+            path: msg.attachment_path,
+            attachment_type: msg.attachment_type,
+            album_id: null,
+          },
         ]);
         setPhotoViewerIndex(0);
         setPhotoViewerOpen(true);
@@ -1053,16 +1072,19 @@ function Chat() {
                                     return;
                                   }
                                   const imageMsgs = (msgs ?? []).filter(
-                                    (msg) =>
-                                      msg.attachment_type?.startsWith("image/") &&
-                                      msg.attachment_path &&
-                                      aurls[msg.attachment_path],
+                                    (msg): msg is Message & { attachment_path: string } =>
+                                      !!(
+                                        msg.attachment_type?.startsWith("image/") &&
+                                        msg.attachment_path &&
+                                        aurls[msg.attachment_path]
+                                      ),
                                   );
                                   setPhotoViewerPhotos(
                                     imageMsgs.map((msg) => ({
                                       id: msg.id,
                                       path: msg.attachment_path,
                                       attachment_type: msg.attachment_type,
+                                      album_id: null,
                                     })),
                                   );
                                   const idx = imageMsgs.findIndex((msg) => msg.id === m.id);
@@ -1606,6 +1628,7 @@ function Chat() {
                   toast.error("Please provide details/proof for the report");
                   return;
                 }
+                if (!uid) return;
                 setReporting(true);
                 try {
                   const { error } = await supabase.from("reports").insert({

@@ -6,6 +6,14 @@ export const Route = createFileRoute("/_authenticated/terms")({
     meta: [
       { title: "Terms & Conditions — Gender" },
       { name: "description", content: "Gender dating app terms of service and privacy policy." },
+
+      { property: "og:title", content: "Terms & Conditions — Gender" },
+      {
+        property: "og:description",
+        content: "Gender dating app terms of service and privacy policy.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Terms,

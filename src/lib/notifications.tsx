@@ -136,7 +136,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           action: n.actionUrl
             ? {
                 label: n.actionLabel ?? "Open",
-                onClick: () => void navigate({ to: n.actionUrl }),
+                onClick: () => {
+                  if (n.actionUrl) void navigate({ to: n.actionUrl });
+                },
               }
             : undefined,
           duration: 8000,

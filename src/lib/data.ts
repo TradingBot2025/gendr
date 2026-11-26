@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { coverPhoto } from "@/lib/photo-visibility";
-import type { Tables } from "@/integrations/supabase/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database, Tables } from "@/integrations/supabase/types";
 
 export type Profile = Pick<
   Tables<"profiles">,
@@ -214,7 +215,18 @@ export function useProfileViews() {
         _offset: 0,
       });
       if (error) throw error;
-      return { views: data ?? [], first: {} as Record<string, string> };
+      const views = data ?? [];
+      const ids = views.map((view) => view.viewer_id);
+      const { data: profiles } = ids.length
+        ? await supabase.from("public_profiles").select("*").in("id", ids)
+        : { data: [] };
+      return {
+        views: views.flatMap((view) => {
+          const profile = profiles?.find((person) => person.id === view.viewer_id);
+          return profile?.id ? [{ ...profile, ...view, id: profile.id }] : [];
+        }),
+        first: {} as Record<string, string>,
+      };
     },
   });
 }
@@ -275,7 +287,7 @@ export function useReports() {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const reports = (data ?? []) as Array<Record<string, unknown>>;
+      const reports = data ?? [];
       // Resolve reporter/reported names from profiles in a second query (admins
       // can read all profiles), merged in by id.
       const ids = Array.from(
@@ -285,7 +297,7 @@ export function useReports() {
             .filter(Boolean),
         ),
       );
-      const byId = new Map<string, { display_name?: string; username?: string }>();
+      const byId = new Map<string, { display_name: string | null; username: string | null }>();
       if (ids.length) {
         const { data: profs } = await supabase
           .from("profiles")
@@ -293,8 +305,8 @@ export function useReports() {
           .in("id", ids);
         (profs ?? []).forEach((p) =>
           byId.set(p.id as string, {
-            display_name: (p as { display_name?: string }).display_name ?? undefined,
-            username: (p as { username?: string }).username ?? undefined,
+            display_name: p.display_name,
+            username: p.username,
           }),
         );
       }
@@ -403,6 +415,22 @@ export async function adminRecordAction(
 }
 
 /* ---------- Blocking ---------- */
+// This optional table is not part of the generated schema. Describe only the
+// legacy requests here; do not alter the shared generated client or database.
+type BlockingDatabase = Database & {
+  public: {
+    Tables: {
+      blocked_users: {
+        Row: { blocker_id: string; blocked_id: string; created_at: string };
+        Insert: { blocker_id: string; blocked_id: string; created_at?: string };
+        Update: { blocker_id?: string; blocked_id?: string; created_at?: string };
+        Relationships: [];
+      };
+    };
+  };
+};
+const blockingClient = supabase as SupabaseClient<BlockingDatabase>;
+
 // Requires the public.blocked_users table (see MIGRATIONS TO APPLY). Fails
 // gracefully with a thrown error the caller can toast if the table is missing.
 
@@ -417,15 +445,15 @@ export async function blockUser(blockedId: string) {
     .or(
       `and(requester.eq.${uid},addressee.eq.${blockedId}),and(requester.eq.${blockedId},addressee.eq.${uid})`,
     );
-  const { error } = await supabase
+  const { error } = await blockingClient
     .from("blocked_users")
-    .insert({ blocker_id: uid, blocked_id: blockedId } as never);
+    .insert({ blocker_id: uid, blocked_id: blockedId });
   if (error) throw error;
 }
 
 export async function unblockUser(blockedId: string) {
   const uid = await currentUserId();
-  const { error } = await supabase
+  const { error } = await blockingClient
     .from("blocked_users")
     .delete()
     .eq("blocker_id", uid)
@@ -439,7 +467,7 @@ export function useBlockedContacts() {
     queryKey: ["blocked-contacts", me?.user.id],
     enabled: !!me,
     queryFn: async () => {
-      const { data: blocks } = await supabase
+      const { data: blocks } = await blockingClient
         .from("blocked_users")
         .select("blocked_id, created_at")
         .order("created_at", { ascending: false });

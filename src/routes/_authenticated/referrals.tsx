@@ -11,6 +11,11 @@ export const Route = createFileRoute("/_authenticated/referrals")({
     meta: [
       { title: "Refer a friend — Gender" },
       { name: "description", content: "Invite friends to Gender and earn rewards." },
+
+      { property: "og:title", content: "Refer a friend — Gender" },
+      { property: "og:description", content: "Invite friends to Gender and earn rewards." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Referrals,

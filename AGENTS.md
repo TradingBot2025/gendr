@@ -30,3 +30,5 @@ use the editor.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 
 <!-- LOVABLE:END -->
+
+- Keep optional legacy table typings local to their callers; never edit generated clients or create database tables just to silence a compile error.

@@ -52,6 +52,11 @@ export const Route = createFileRoute("/_authenticated/profile/")({
     meta: [
       { title: "My profile — Gender" },
       { name: "description", content: "Edit your details, photos and verification." },
+
+      { property: "og:title", content: "My profile — Gender" },
+      { property: "og:description", content: "Edit your details, photos and verification." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: ProfilePage,

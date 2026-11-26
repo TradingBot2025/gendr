@@ -66,11 +66,10 @@ export const sendCallSignal = createServerFn({ method: "POST" })
     // send even if the join is slow/fails — worst case matches the old behavior.
     await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, 3000);
-      channel.subscribe((status) => {
-        if (status !== "CONNECTING") {
-          clearTimeout(timer);
-          resolve();
-        }
+      channel.subscribe(() => {
+        // Subscribe callbacks report only joined, closed, or failed states.
+        clearTimeout(timer);
+        resolve();
       });
     });
     const result = await channel.send({

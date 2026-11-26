@@ -83,6 +83,11 @@ export const Route = createFileRoute("/_authenticated/connections")({
     meta: [
       { title: "Matches — Gender" },
       { name: "description", content: "Your matches and connection requests." },
+
+      { property: "og:title", content: "Matches — Gender" },
+      { property: "og:description", content: "Your matches and connection requests." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Connections,
@@ -235,7 +240,7 @@ function Connections() {
                     <DropdownMenuItem
                       onClick={() => {
                         setReportTargetId(d.p.id);
-                        setReportTargetName(d.p.display_name);
+                        setReportTargetName(d.p.display_name ?? "Member");
                         setReportOpen(true);
                       }}
                     >
@@ -441,6 +446,7 @@ function Connections() {
                   toast.error("Please provide details/proof for the report");
                   return;
                 }
+                if (!uid) return;
                 setReporting(true);
                 try {
                   const { error } = await supabase.from("reports").insert({

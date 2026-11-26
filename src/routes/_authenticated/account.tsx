@@ -30,6 +30,14 @@ export const Route = createFileRoute("/_authenticated/account")({
     meta: [
       { title: "Account — Gender" },
       { name: "description", content: "Manage your account, privacy and delete your account." },
+
+      { property: "og:title", content: "Account — Gender" },
+      {
+        property: "og:description",
+        content: "Manage your account, privacy and delete your account.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Account,

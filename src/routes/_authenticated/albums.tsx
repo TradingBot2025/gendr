@@ -19,6 +19,14 @@ export const Route = createFileRoute("/_authenticated/albums")({
         name: "description",
         content: "Manage your private photo albums. Shared only with your matches.",
       },
+
+      { property: "og:title", content: "Private Albums — Gender" },
+      {
+        property: "og:description",
+        content: "Manage your private photo albums. Shared only with your matches.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Albums,
