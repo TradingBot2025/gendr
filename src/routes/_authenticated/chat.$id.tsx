@@ -659,9 +659,8 @@ function Chat() {
     }
   };
 
-  // --- Slide-to-delete ---
+  // --- Slide actions: block / read / delete ---
   const handleSwipeStart = (e: React.TouchEvent, msgId: string) => {
-    if (!mineFromMsg(e.currentTarget as Element, msgs, msgId)) return;
     const touch = e.touches[0];
     if (!touch) return;
     swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
@@ -672,7 +671,7 @@ function Chat() {
     if (!swipeStartRef.current || !touch) return;
     const dx = touch.clientX - swipeStartRef.current.x;
     const dy = touch.clientY - swipeStartRef.current.y;
-    // Only trigger horizontal swipe on sender's own messages
+    // Horizontal swipe on any message reveals block / read / delete actions
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
       setSwipedMsgId(msgId);
     }
@@ -680,6 +679,45 @@ function Chat() {
 
   const handleSwipeEnd = () => {
     swipeStartRef.current = null;
+  };
+
+  // Mark a peer's message as read (marks the whole conversation as read).
+  const markMessageRead = async (messageId: string) => {
+    await supabase.rpc("mark_chat_read", { _connection_id: id });
+    qc.invalidateQueries({ queryKey: ["messages", id] });
+    qc.invalidateQueries({ queryKey: ["inbox"] });
+    setSwipedMsgId(null);
+  };
+
+  // Unsend your own message.
+  const handleDeleteSwiped = async () => {
+    if (!swipedMsgId) return;
+    const msg = msgs?.find((m) => m.id === swipedMsgId);
+    if (msg && mine(msg)) {
+      await unsendMessage(swipedMsgId);
+    }
+    setSwipedMsgId(null);
+  };
+
+  // Block the user who sent the swiped message.
+  const handleBlockSwiped = async (msg: Message) => {
+    if (
+      !confirm(
+        `Block ${msg.sender === uid ? "you" : "this user"}? They won't be able to message or call you.`,
+      )
+    ) {
+      setSwipedMsgId(null);
+      return;
+    }
+    try {
+      await blockUser(msg.sender);
+      toast.success("User blocked");
+      qc.invalidateQueries({ queryKey: ["inbox"] });
+      qc.invalidateQueries({ queryKey: ["blocked-contacts"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't block user");
+    }
+    setSwipedMsgId(null);
   };
 
   // --- Long press ---
@@ -725,23 +763,6 @@ function Chat() {
         setPhotoViewerOpen(true);
       }
     }
-  };
-
-  // Unsend (delete) the swiped message
-  const handleDeleteSwiped = async () => {
-    if (!swipedMsgId) return;
-    await unsendMessage(swipedMsgId);
-    setSwipedMsgId(null);
-  };
-
-  const mineFromMsg = (
-    el: Element | null,
-    messages: Message[] | undefined,
-    msgId: string,
-  ): boolean => {
-    if (!messages || !el) return false;
-    const m = messages.find((msg) => msg.id === msgId);
-    return m ? m.sender === uid : false;
   };
 
   const mine = (m: Message) => m.sender === uid;
@@ -1010,11 +1031,38 @@ function Chat() {
                     : "rounded-bl-sm bg-card"
                 } ${isExpired && !isShortTimer ? "opacity-60" : ""} ${
                   isUnsent ? "bg-muted" : ""
-                } ${swipedMsgId === m.id ? "translate-x-[-60px]" : ""} relative`}
+                } ${swipedMsgId === m.id ? "translate-x-[-110px]" : ""} relative`}
               >
-                {swipedMsgId === m.id && mine && (
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-4 text-destructive">
-                    <Trash2 className="h-5 w-5" />
+                {swipedMsgId === m.id && (
+                  <div className="absolute inset-y-0 right-0 flex items-center gap-1 px-3">
+                    {mine && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteSwiped}
+                        className="p-2 text-destructive hover:bg-red-500/10 rounded-lg transition-colors"
+                        aria-label="Delete message"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                    )}
+                    {!mine && !m.read_at && (
+                      <button
+                        type="button"
+                        onClick={() => markMessageRead(m.id)}
+                        className="p-2 text-blue-600 hover:bg-blue-500/10 rounded-lg transition-colors"
+                        aria-label="Mark as read"
+                      >
+                        <Check className="h-5 w-5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleBlockSwiped(m)}
+                      className="p-2 text-destructive hover:bg-red-500/10 rounded-lg transition-colors"
+                      aria-label="Block user"
+                    >
+                      <UserX className="h-5 w-5" />
+                    </button>
                   </div>
                 )}
                 {isUnsent ? (
