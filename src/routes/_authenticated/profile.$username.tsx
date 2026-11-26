@@ -23,6 +23,7 @@ import {
   Video,
   UserX,
 } from "lucide-react";
+import type { Database } from "@/integrations/supabase/types";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, logProfileView, reportProfile, blockUser } from "@/lib/data";
 import { useCall } from "@/lib/calls";
@@ -58,7 +59,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/_authenticated/profile/$username")({
   head: () => ({
-    meta: [{ title: "Profile — Gender" }, { name: "description", content: "View user profile." }],
+    meta: [
+      { title: "Profile — Gender" },
+      { name: "description", content: "View user profile." },
+      { property: "og:title", content: "Profile — Gender" },
+      { property: "og:description", content: "View user profile." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
   }),
   component: ProfileView,
 });
@@ -153,6 +161,7 @@ function ProfileView() {
     queryKey: ["profile-view", username],
     enabled: !!uid,
     queryFn: async () => {
+      if (!uid) return null;
       // Read other members from the public_profiles view (readable by all authenticated users).
       // The route param may be a username or, as a fallback for legacy profiles without a
       // username, the user's id (UUID).
@@ -163,8 +172,12 @@ function ProfileView() {
           .from("public_profiles")
           .select(cols)
           .eq(column, value)
-          .maybeSingle();
-        return data;
+          .maybeSingle()
+          .overrideTypes<
+            Database["public"]["Views"]["public_profiles"]["Row"] | null,
+            { merge: false }
+          >();
+        return data?.id ? { ...data, id: data.id } : null;
       };
 
       let p = await fetchBy("username", username, PUBLIC_PROFILE_COLUMNS);
@@ -281,14 +294,14 @@ function ProfileView() {
   // If someone opens their own /profile/<self>, send them to the editor.
   useEffect(() => {
     if (profile?.profile && profile.profile.id === uid) {
-      void navigate({ to: "/profile/" });
+      void navigate({ to: "/profile" });
     }
   }, [profile, uid, navigate]);
 
   const conn = profile?.connections.find(
     (c: { requester: string; addressee: string; status: string }) =>
-      (c.requester === uid && c.addressee === profile.profile?.id) ||
-      (c.requester === profile.profile?.id && c.addressee === uid),
+      (c.requester === uid && c.addressee === profile?.profile.id) ||
+      (c.requester === profile?.profile.id && c.addressee === uid),
   );
   const isConnected = profile?.isConnected ?? conn?.status === "accepted";
   const isPending = conn?.status === "pending";
@@ -307,15 +320,12 @@ function ProfileView() {
   const allVisiblePrivate =
     visiblePhotos.length > 0 &&
     visiblePhotos.every((ph: { is_private: boolean }) => ph.is_private === true);
-  const showMainBlur = !isConnected && allVisiblePrivate && profile.profile?.id !== uid;
+  const showMainBlur = !isConnected && allVisiblePrivate && profile?.profile.id !== uid;
 
-  const privateAlbumWithPhotos = albums.find(
-    (a: { is_private: boolean; photos?: { length: number }[] }) =>
-      a.is_private && a.photos?.length > 0,
-  );
+  const privateAlbumWithPhotos = albums.find((a) => a.is_private && a.photos.length > 0);
   const fallbackMainPhoto = privateAlbumWithPhotos?.photos?.[0];
   const showFallbackBlur =
-    !isConnected && !hasMainPhotos && fallbackMainPhoto && profile.profile?.id !== uid;
+    !isConnected && !hasMainPhotos && fallbackMainPhoto && profile?.profile.id !== uid;
 
   // Photos we are allowed to render: visible (public, or all when connected) main photos,
   // plus album photos the viewer may open (approved private albums only — even connected
@@ -343,7 +353,7 @@ function ProfileView() {
   const p = profile?.profile;
   const peerOnline = p ? presence.isOnline(p.id) : false;
 
-  if (!me || profileLoading)
+  if (!me || !uid || profileLoading)
     return <div className="flex h-screen items-center justify-center">Loading…</div>;
   if (profileError)
     return <div className="p-8 text-center text-muted-foreground">Failed to load profile.</div>;
@@ -374,7 +384,7 @@ function ProfileView() {
       await reportProfile(p.id, reportDescription.trim(), {
         reasonCategory: reportReason,
         proofText: reportDescription.trim(),
-        proofFilePath,
+        ...(proofFilePath ? { proofFilePath } : {}),
         autoBlock: blockAfterReport,
       });
       if (blockAfterReport) {
@@ -401,6 +411,7 @@ function ProfileView() {
   };
 
   const handleRequestAlbumAccess = async (albumId: string) => {
+    if (!uid) return;
     const { error } = await supabase
       .from("album_access_requests")
       .insert({ album_id: albumId, requester_id: uid });
@@ -621,7 +632,7 @@ function ProfileView() {
                     >
                       <img
                         src={urls[mainPhotos[carouselIndex].path]}
-                        alt={p.display_name}
+                        alt={p.display_name ?? "Member"}
                         className={`h-full w-full object-cover ${showMainBlur ? "blur-[16px]" : ""}`}
                         loading="eager"
                       />
@@ -815,7 +826,7 @@ function ProfileView() {
                       <Button
                         variant="outline"
                         className="h-11 w-11 shrink-0 rounded-full"
-                        onClick={() => call.start(p.id, p.display_name, false)}
+                        onClick={() => call.start(p.id, p.display_name ?? "Member", false)}
                         aria-label="Voice call"
                         disabled={!profile.convoStarted}
                         title={
@@ -829,7 +840,7 @@ function ProfileView() {
                       <Button
                         variant="outline"
                         className="h-11 w-11 shrink-0 rounded-full"
-                        onClick={() => call.start(p.id, p.display_name, true)}
+                        onClick={() => call.start(p.id, p.display_name ?? "Member", true)}
                         aria-label="Video call"
                         disabled={!profile.convoStarted}
                         title={
@@ -965,131 +976,124 @@ function ProfileView() {
                   <Image className="h-6 w-6" /> Albums ({albumsWithPhotos.length})
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {albumsWithPhotos.map(
-                    (album: {
-                      id: string;
-                      is_private: boolean;
-                      photos?: { path: string; preview_path?: string }[];
-                      name: string;
-                    }) => {
-                      const albumPhotos = album.photos ?? [];
-                      const hasPhotos = albumPhotos.length > 0;
-                      const firstPhoto = albumPhotos[0];
-                      const firstPhotoUrl =
-                        hasPhotos && firstPhoto?.path ? urls[firstPhoto.path] : null;
-                      const firstPreviewUrl =
-                        hasPhotos && firstPhoto?.preview_path
-                          ? previewUrls[firstPhoto.preview_path]
-                          : null;
-                      const isPrivateAlbum =
-                        album.is_private && albumRequests[album.id]?.status !== "approved";
-                      const request = albumRequests[album.id];
-                      const isOwner = p.id === uid;
+                  {albumsWithPhotos.map((album) => {
+                    const albumPhotos = album.photos ?? [];
+                    const hasPhotos = albumPhotos.length > 0;
+                    const firstPhoto = albumPhotos[0];
+                    const firstPhotoUrl =
+                      hasPhotos && firstPhoto?.path ? urls[firstPhoto.path] : null;
+                    const firstPreviewUrl =
+                      hasPhotos && firstPhoto?.preview_path
+                        ? previewUrls[firstPhoto.preview_path]
+                        : null;
+                    const isPrivateAlbum =
+                      album.is_private && albumRequests[album.id]?.status !== "approved";
+                    const request = albumRequests[album.id];
+                    const isOwner = p.id === uid;
 
-                      return (
-                        <Button
-                          key={album.id}
-                          variant="ghost"
-                          className="rounded-3xl border bg-card overflow-hidden shadow-soft h-auto p-0"
-                          onClick={() => {
-                            if (isPrivateAlbum && hasPhotos) {
-                              if (request?.status === "approved") {
-                                setViewerPhotos(albumPhotos);
-                                setPhotoViewerIndex(0);
-                                setPhotoViewerOpen(true);
-                              }
-                              return;
-                            }
-                            if (hasPhotos) {
+                    return (
+                      <Button
+                        key={album.id}
+                        variant="ghost"
+                        className="rounded-3xl border bg-card overflow-hidden shadow-soft h-auto p-0"
+                        onClick={() => {
+                          if (isPrivateAlbum && hasPhotos) {
+                            if (request?.status === "approved") {
                               setViewerPhotos(albumPhotos);
                               setPhotoViewerIndex(0);
                               setPhotoViewerOpen(true);
                             }
-                          }}
-                          disabled={!hasPhotos}
-                        >
-                          <div className="aspect-[4/5] bg-muted relative">
-                            {isPrivateAlbum && hasPhotos ? (
-                              // Show the pre-blurred derivative only — never the original private photo.
-                              firstPreviewUrl ? (
-                                <img
-                                  src={firstPreviewUrl}
-                                  alt={album.name}
-                                  className="h-full w-full object-cover blur-[20px]"
-                                  loading="lazy"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = "none";
-                                  }}
-                                />
-                              ) : (
-                                <div className="h-full w-full bg-muted" />
-                              )
-                            ) : firstPhotoUrl ? (
+                            return;
+                          }
+                          if (hasPhotos) {
+                            setViewerPhotos(albumPhotos);
+                            setPhotoViewerIndex(0);
+                            setPhotoViewerOpen(true);
+                          }
+                        }}
+                        disabled={!hasPhotos}
+                      >
+                        <div className="aspect-[4/5] bg-muted relative">
+                          {isPrivateAlbum && hasPhotos ? (
+                            // Show the pre-blurred derivative only — never the original private photo.
+                            firstPreviewUrl ? (
                               <img
-                                src={firstPhotoUrl}
+                                src={firstPreviewUrl}
                                 alt={album.name}
-                                className="h-full w-full object-cover"
+                                className="h-full w-full object-cover blur-[20px]"
                                 loading="lazy"
                                 onError={(e) => {
                                   e.currentTarget.style.display = "none";
                                 }}
                               />
                             ) : (
-                              <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">
-                                {album.name?.[0]}
-                              </div>
-                            )}
-                            {isPrivateAlbum && (
-                              <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
-                                <Lock className="h-8 w-8 text-white/90 mb-2" />
-                                <p className="text-white text-sm font-medium">Private Album</p>
-                                {request?.status === "pending" && (
-                                  <span className="mt-2 text-white/80 text-sm">Request sent</span>
-                                )}
-                                {request?.status === "declined" && (
-                                  <span className="mt-2 text-white/80 text-sm text-red-300">
-                                    Declined
-                                  </span>
-                                )}
-                                {request?.status === "approved" && (
-                                  <Button
-                                    variant="default"
-                                    className="mt-3 bg-primary text-primary-foreground"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setViewerPhotos(albumPhotos);
-                                      setPhotoViewerIndex(0);
-                                      setPhotoViewerOpen(true);
-                                    }}
-                                  >
-                                    <Eye className="h-3 w-3 mr-1" /> View Album
-                                  </Button>
-                                )}
-                                {(!request || request.status === "declined") && !isOwner && (
-                                  <Button
-                                    variant="default"
-                                    className="mt-3 bg-primary text-primary-foreground"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRequestAlbumAccess(album.id);
-                                    }}
-                                  >
-                                    <UserPlus className="h-3 w-3 mr-1" /> Request Access
-                                  </Button>
-                                )}
-                              </div>
-                            )}
-                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent p-4 text-stage-foreground">
-                              <div className="font-semibold">{album.name}</div>
-                              <div className="text-sm opacity-90">
-                                {albumPhotos.length} photo{albumPhotos.length !== 1 ? "s" : ""}
-                              </div>
+                              <div className="h-full w-full bg-muted" />
+                            )
+                          ) : firstPhotoUrl ? (
+                            <img
+                              src={firstPhotoUrl}
+                              alt={album.name}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center font-display text-6xl text-muted-foreground">
+                              {album.name?.[0]}
+                            </div>
+                          )}
+                          {isPrivateAlbum && (
+                            <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-4 text-center">
+                              <Lock className="h-8 w-8 text-white/90 mb-2" />
+                              <p className="text-white text-sm font-medium">Private Album</p>
+                              {request?.status === "pending" && (
+                                <span className="mt-2 text-white/80 text-sm">Request sent</span>
+                              )}
+                              {request?.status === "declined" && (
+                                <span className="mt-2 text-white/80 text-sm text-red-300">
+                                  Declined
+                                </span>
+                              )}
+                              {request?.status === "approved" && (
+                                <Button
+                                  variant="default"
+                                  className="mt-3 bg-primary text-primary-foreground"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setViewerPhotos(albumPhotos);
+                                    setPhotoViewerIndex(0);
+                                    setPhotoViewerOpen(true);
+                                  }}
+                                >
+                                  <Eye className="h-3 w-3 mr-1" /> View Album
+                                </Button>
+                              )}
+                              {(!request || request.status === "declined") && !isOwner && (
+                                <Button
+                                  variant="default"
+                                  className="mt-3 bg-primary text-primary-foreground"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRequestAlbumAccess(album.id);
+                                  }}
+                                >
+                                  <UserPlus className="h-3 w-3 mr-1" /> Request Access
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-stage/80 to-transparent p-4 text-stage-foreground">
+                            <div className="font-semibold">{album.name}</div>
+                            <div className="text-sm opacity-90">
+                              {albumPhotos.length} photo{albumPhotos.length !== 1 ? "s" : ""}
                             </div>
                           </div>
-                        </Button>
-                      );
-                    },
-                  )}
+                        </div>
+                      </Button>
+                    );
+                  })}
                 </div>
               </div>
             )}

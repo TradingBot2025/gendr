@@ -38,6 +38,11 @@ export const Route = createFileRoute("/_authenticated/random")({
     meta: [
       { title: "Random video — Gender" },
       { name: "description", content: "Meet someone new on a random video call." },
+
+      { property: "og:title", content: "Random video — Gender" },
+      { property: "og:description", content: "Meet someone new on a random video call." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Random,
@@ -164,8 +169,8 @@ function Random() {
         }),
       );
       if (error) throw error;
-      if (data && data.length > 0) {
-        const peer = data[0];
+      const peer = data?.[0];
+      if (peer) {
         beginWithPeer(peer.peer_id, peer.peer_name);
       } else {
         // No match found immediately - wait for one via realtime. We don't yet
@@ -289,7 +294,7 @@ function Random() {
   };
 
   const handleReport = async () => {
-    if (!reportReason || !peerIdRef.current) return;
+    if (!uid || !reportReason || !peerIdRef.current) return;
     try {
       // Report the peer
       await Promise.resolve(

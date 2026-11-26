@@ -50,7 +50,7 @@ function Index() {
   return (
     <div className="min-h-screen bg-background">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <Link asChild>
+        <Link to="/">
           <img src="/LOGO.webp" alt="Gender logo" className="h-8 w-auto" />
         </Link>
         <Button asChild variant="ghost">

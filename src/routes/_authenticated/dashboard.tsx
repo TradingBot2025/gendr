@@ -75,7 +75,9 @@ function Dashboard() {
         }),
         incoming: c.filter((x) => x.status === "pending" && x.addressee === uid).length,
         sent: c.filter((x) => x.status === "pending" && x.requester === uid).length,
-        people: people ?? [],
+        people: (people ?? []).filter(
+          (person): person is typeof person & { id: string } => !!person.id,
+        ),
         first,
       };
     },
@@ -166,7 +168,7 @@ function Dashboard() {
             <div className="text-sm text-muted-foreground">{s.label}</div>
           </Link>
         ))}
-        <Link to="/profile/" className="rounded-3xl border bg-card p-5 shadow-soft">
+        <Link to="/profile" className="rounded-3xl border bg-card p-5 shadow-soft">
           <div className="text-sm text-muted-foreground">Profile strength</div>
           <div className="mt-2 text-3xl font-bold">{pct}%</div>
           <Progress value={pct} className="mt-3" />

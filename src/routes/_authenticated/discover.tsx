@@ -33,6 +33,15 @@ export const Route = createFileRoute("/_authenticated/discover")({
         content:
           "Find people by gender, orientation, age and location. Browse and see who viewed your profile.",
       },
+
+      { property: "og:title", content: "Discover — Gender" },
+      {
+        property: "og:description",
+        content:
+          "Find people by gender, orientation, age and location. Browse and see who viewed your profile.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Discover,
@@ -133,7 +142,7 @@ function Discover() {
     if (isFetchingNextPage || !hasNextPage) return;
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
+        if (entries[0]?.isIntersecting) {
           fetchNextPage();
         }
       },
@@ -330,71 +339,62 @@ function Discover() {
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {viewed.data?.views.map(
-                (p: {
-                  viewer_id: string;
-                  username: string | null;
-                  photo_path: string | null;
-                  connection_status: string;
-                  connection_id: string | null;
-                  connection_requester: string | null;
-                }) => {
-                  const profileUsername =
-                    p.username && p.username.trim() !== "" ? p.username : p.viewer_id;
-                  return (
-                    <ProfileCard
-                      key={p.viewer_id}
-                      p={p}
-                      compact
-                      photo={p.photo_path ? urls[p.photo_path] : undefined}
-                      to="/profile/$username"
-                      toParams={{ username: profileUsername }}
-                      action={
-                        <div className="flex gap-2">
-                          {p.connection_status === "accepted" ? (
-                            <Button asChild variant="success" className="flex-1">
-                              <Link to="/chat/$id" params={{ id: p.connection_id ?? "" }}>
-                                Chat
-                              </Link>
-                            </Button>
-                          ) : p.connection_status === "pending" &&
-                            p.connection_requester !== me?.user.id ? (
-                            <div className="flex gap-2 w-full">
-                              <Button
-                                variant="success"
-                                className="flex-1"
-                                onClick={() => respond(p.connection_id!, "accepted")}
-                              >
-                                Accept
-                              </Button>
-                              <Button
-                                variant="outline"
-                                className="flex-1"
-                                onClick={() => respond(p.connection_id!, "declined")}
-                              >
-                                Decline
-                              </Button>
-                            </div>
-                          ) : p.connection_status === "pending" &&
-                            p.connection_requester === me?.user.id ? (
-                            <Button variant="secondary" disabled className="w-full">
-                              Waiting for response…
-                            </Button>
-                          ) : (
+              {viewed.data?.views.map((p) => {
+                const profileUsername =
+                  p.username && p.username.trim() !== "" ? p.username : p.viewer_id;
+                return (
+                  <ProfileCard
+                    key={p.viewer_id}
+                    p={p}
+                    compact
+                    photo={p.photo_path ? urls[p.photo_path] : undefined}
+                    to="/profile/$username"
+                    toParams={{ username: profileUsername }}
+                    action={
+                      <div className="flex gap-2">
+                        {p.connection_status === "accepted" ? (
+                          <Button asChild variant="success" className="flex-1">
+                            <Link to="/chat/$id" params={{ id: p.connection_id ?? "" }}>
+                              Chat
+                            </Link>
+                          </Button>
+                        ) : p.connection_status === "pending" &&
+                          p.connection_requester !== me?.user.id ? (
+                          <div className="flex gap-2 w-full">
                             <Button
-                              variant="hero"
+                              variant="success"
                               className="flex-1"
-                              onClick={() => connect(p.viewer_id)}
+                              onClick={() => respond(p.connection_id!, "accepted")}
                             >
-                              Connect
+                              Accept
                             </Button>
-                          )}
-                        </div>
-                      }
-                    />
-                  );
-                },
-              )}
+                            <Button
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => respond(p.connection_id!, "declined")}
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        ) : p.connection_status === "pending" &&
+                          p.connection_requester === me?.user.id ? (
+                          <Button variant="secondary" disabled className="w-full">
+                            Waiting for response…
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="hero"
+                            className="flex-1"
+                            onClick={() => connect(p.viewer_id)}
+                          >
+                            Connect
+                          </Button>
+                        )}
+                      </div>
+                    }
+                  />
+                );
+              })}
             </div>
           )}
         </div>

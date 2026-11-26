@@ -54,7 +54,13 @@ export async function showBackgroundNotification(opts: {
 }): Promise<void> {
   const { title, body, url = "/", tag } = opts;
   const reg = await registerServiceWorker();
-  const base = { body, icon: "/icon-192.png", badge: "/icon-192.png", tag, data: { url } };
+  const base: NotificationOptions = {
+    ...(body !== undefined ? { body } : {}),
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    ...(tag !== undefined ? { tag } : {}),
+    data: { url },
+  };
   try {
     if (reg && "showNotification" in reg) {
       await reg.showNotification(title, base);
@@ -72,7 +78,7 @@ export async function showBackgroundNotification(opts: {
 
 // Ask the user for notification permission so alerts show even when the app is
 // minimized. No keys or push subscription involved.
-export async function enableNotifications(): Promise<"granted" | "denied" | "unsupported"> {
+export async function enableNotifications(): Promise<NotificationPermissionLike> {
   if (!isPushSupported()) return "unsupported";
   const permission = await Notification.requestPermission();
   return permission;

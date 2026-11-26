@@ -2,7 +2,7 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useMe, useSigned, type Profile } from "@/lib/data";
+import { useMe, useSigned, type Profile, type Message } from "@/lib/data";
 import { usePresence } from "@/lib/presence";
 import { Button } from "@/components/ui/button";
 import {
@@ -86,6 +86,11 @@ export const Route = createFileRoute("/_authenticated/messages")({
     meta: [
       { title: "Messages — Gender" },
       { name: "description", content: "Your conversations with matches." },
+
+      { property: "og:title", content: "Messages — Gender" },
+      { property: "og:description", content: "Your conversations with matches." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Messages,
@@ -158,6 +163,7 @@ function Messages() {
     // and so online dots reflect presence changes without a manual reload.
     refetchInterval: 15000,
     queryFn: async () => {
+      if (!uid) return [];
       const { data: conns } = await supabase
         .from("connections")
         .select("*")
@@ -197,7 +203,7 @@ function Messages() {
         if (!firstPhoto[p.user_id]) firstPhoto[p.user_id] = p.path;
       });
 
-      const latestMsg: Record<string, (typeof messages)[0]> = {};
+      const latestMsg: Record<string, Message> = {};
       const unreadCount: Record<string, number> = {};
       messages?.forEach((m) => {
         if (!latestMsg[m.connection_id]) latestMsg[m.connection_id] = m;
@@ -219,7 +225,10 @@ function Messages() {
             unreadCount: unreadCount[c.id] ?? 0,
           };
         })
-        .filter((x) => x.profile);
+        .filter(
+          (x): x is typeof x & { profile: NonNullable<typeof x.profile> & { id: string } } =>
+            !!x.profile?.id,
+        );
     },
   });
 
@@ -229,6 +238,7 @@ function Messages() {
     enabled: !!uid,
     refetchInterval: 10000,
     queryFn: async () => {
+      if (!uid) return [];
       const { data: myAlbums } = await supabase
         .from("photo_albums")
         .select("id, name, user_id")
@@ -290,6 +300,7 @@ function Messages() {
     enabled: !!uid,
     refetchInterval: 10000,
     queryFn: async () => {
+      if (!uid) return [];
       const { data: requests } = await supabase
         .from("album_access_requests")
         .select("*")
@@ -341,11 +352,12 @@ function Messages() {
 
   // Fetch my declined requests (where I requested and was declined) — these
   // can be re-sent with "Request again".
-  const { data: myDeclinedRequests } = useQuery({
+  const { data: myDeclinedRequests = [] } = useQuery({
     queryKey: ["album-requests-declined", uid],
     enabled: !!uid,
     refetchInterval: 10000,
     queryFn: async () => {
+      if (!uid) return [];
       const { data: requests } = await supabase
         .from("album_access_requests")
         .select("*")
@@ -532,6 +544,7 @@ function Messages() {
   };
 
   const handleReportSubmit = async () => {
+    if (!uid) return;
     if (!reportReason) {
       toast.error("Please select a reason");
       return;
@@ -833,7 +846,7 @@ function Messages() {
                     {d.photo && urls[d.photo] ? (
                       <img
                         src={urls[d.photo]}
-                        alt={d.profile.display_name}
+                        alt={d.profile.display_name ?? "Member"}
                         className="h-full w-full object-cover"
                       />
                     ) : (
@@ -912,7 +925,7 @@ function Messages() {
                     <DropdownMenuItem
                       onClick={() => {
                         setReportTargetId(d.profile.id);
-                        setReportTargetName(d.profile.display_name);
+                        setReportTargetName(d.profile.display_name ?? "Member");
                         setReportOpen(true);
                       }}
                     >
