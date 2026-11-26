@@ -145,63 +145,34 @@ function Discover() {
     };
   }, [isFetchingNextPage, hasNextPage, fetchNextPage]);
 
-  // Filter change handlers that reset pagination
-  const handleGenderChange = useCallback(
-    (v: string) => {
-      setGender(v);
-      refetch();
-    },
-    [refetch],
-  );
-  const handleOrientationChange = useCallback(
-    (v: string) => {
-      setOrientation(v);
-      refetch();
-    },
-    [refetch],
-  );
-  const handleMinAgeChange = useCallback(
-    (v: number) => {
-      setMinAge(v);
-      refetch();
-    },
-    [refetch],
-  );
-  const handleMaxAgeChange = useCallback(
-    (v: number) => {
-      setMaxAge(v);
-      refetch();
-    },
-    [refetch],
-  );
-  const handlePlaceChange = useCallback(
-    (v: string) => {
-      setPlace(v);
-      refetch();
-    },
-    [refetch],
-  );
-  const handleVerifiedOnlyChange = useCallback(
-    (v: boolean) => {
-      setVerifiedOnly(v);
-      refetch();
-    },
-    [refetch],
-  );
-  const handleOnlineOnlyChange = useCallback(
-    (v: boolean) => {
-      setOnlineOnly(v);
-      refetch();
-    },
-    [refetch],
-  );
-  const handleSortFreshChange = useCallback(
-    (v: boolean) => {
-      setSortFresh(v);
-      refetch();
-    },
-    [refetch],
-  );
+  // Filter change handlers that reset pagination.
+  // Changing a filter updates the queryKey, which triggers React Query to
+  // automatically refetch — no manual refetch() needed (and calling it before
+  // setState would use stale filter values).
+  const handleGenderChange = useCallback((v: string) => {
+    setGender(v);
+  }, []);
+  const handleOrientationChange = useCallback((v: string) => {
+    setOrientation(v);
+  }, []);
+  const handleMinAgeChange = useCallback((v: number) => {
+    setMinAge(v);
+  }, []);
+  const handleMaxAgeChange = useCallback((v: number) => {
+    setMaxAge(v);
+  }, []);
+  const handlePlaceChange = useCallback((v: string) => {
+    setPlace(v);
+  }, []);
+  const handleVerifiedOnlyChange = useCallback((v: boolean) => {
+    setVerifiedOnly(v);
+  }, []);
+  const handleOnlineOnlyChange = useCallback((v: boolean) => {
+    setOnlineOnly(v);
+  }, []);
+  const handleSortFreshChange = useCallback((v: boolean) => {
+    setSortFresh(v);
+  }, []);
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8">

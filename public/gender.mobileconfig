@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>FullScreen</key>
+      <true/>
+      <key>Icon</key>
+      <data>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</data>
+      <key>IgnoreManifestScope</key>
+      <false/>
+      <key>IsRemovable</key>
+      <true/>
+      <key>Label</key>
+      <string>Gender</string>
+      <key>PayloadDescription</key>
+      <string>Adds Gender to the iOS Home Screen in standalone full-screen mode.</string>
+      <key>PayloadDisplayName</key>
+      <string>Gender Web Clip</string>
+      <key>PayloadIdentifier</key>
+      <string>com.gendrlovableapp.gender.webclip</string>
+      <key>PayloadType</key>
+      <string>com.apple.webClip.managed</string>
+      <key>PayloadUUID</key>
+      <string>FBCAC636-F233-466B-8400-0DE830494E28</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>Precomposed</key>
+      <true/>
+      <key>URL</key>
+      <string>https://gendr.lovable.app/</string>
+    </dict>
+  </array>
+  <key>PayloadDescription</key>
+  <string>Ready-to-build Capacitor Android project wrapping https://gendr.lovable.app/ directly as-is with App Name &quot;Gender&quot;, Package ID &quot;com.gendrlovableapp.gender&quot;, hardware Back navigation, and automatic liv</string>
+  <key>PayloadDisplayName</key>
+  <string>Gender</string>
+  <key>PayloadIdentifier</key>
+  <string>com.gendrlovableapp.gender.profile</string>
+  <key>PayloadOrganization</key>
+  <string>Gender</string>
+  <key>PayloadRemovalDisallowed</key>
+  <false/>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>87991B84-D123-4403-85CE-DE46FE6C69FA</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+</dict>
+</plist>

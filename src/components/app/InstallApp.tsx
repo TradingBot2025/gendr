@@ -23,65 +23,6 @@ function isIos(): boolean {
   return /iphone|ipad|ipod/i.test(navigator.userAgent) || navigator.platform === "MacIntel";
 }
 
-// Build an iOS ".mobileconfig" profile that installs Gender as a Home Screen
-// web app (Web Clip) pointing at the current site.
-function downloadIosConfig() {
-  const url = window.location.origin;
-  const uuid = "0000" + crypto.randomUUID().slice(0, 4).toUpperCase();
-  const payloadUuid = crypto.randomUUID().toUpperCase();
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>PayloadContent</key>
-  <array>
-    <dict>
-      <key>PayloadType</key>
-      <string>com.apple.webClip.managed</string>
-      <key>PayloadVersion</key>
-      <integer>1</integer>
-      <key>PayloadUUID</key>
-      <string>${payloadUuid}</string>
-      <key>PayloadDisplayName</key>
-      <string>Gender</string>
-      <key>PayloadIdentifier</key>
-      <string>com.gender.webclip</string>
-      <key>URL</key>
-      <string>${url}</string>
-      <key>IsRemovable</key>
-      <true/>
-      <key>FullScreen</key>
-      <true/>
-      <key>Precomposed</key>
-      <true/>
-    </dict>
-  </array>
-  <key>PayloadType</key>
-  <string>Configuration</string>
-  <key>PayloadVersion</key>
-  <integer>1</integer>
-  <key>PayloadUUID</key>
-  <string>${uuid}</string>
-  <key>PayloadDisplayName</key>
-  <string>Install Gender</string>
-  <key>PayloadIdentifier</key>
-  <string>com.gender.install</string>
-  <key>PayloadDescription</key>
-  <string>Adds Gender to your Home Screen as a full-screen app.</string>
-  <key>PayloadOrganization</key>
-  <string>Gender</string>
-</dict>
-</plist>`;
-  const blob = new Blob([plist], { type: "application/x-apple-aspen-config" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = "Gender.mobileconfig";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(link.href);
-}
-
 type Platform = "ios" | "android" | "desktop";
 
 function detectPlatform(): Platform {
@@ -213,9 +154,11 @@ export function InstallApp({ variant = "section" }: { variant?: "section" | "ban
                 3. Choose <strong>Add to Home Screen</strong>
               </li>
             </ol>
-            <Button variant="outline" size="sm" className="mt-4 w-full" onClick={downloadIosConfig}>
-              <Download className="mr-2 h-4 w-4" /> Download iOS config
-            </Button>
+            <a href="/gender.mobileconfig" download className="block w-full mt-4">
+              <Button variant="outline" size="sm" className="w-full">
+                <Download className="mr-2 h-4 w-4" /> Download iOS config
+              </Button>
+            </a>
             <p className="mt-2 text-xs text-muted-foreground">
               On iOS 12.2+? Download the config, open it in Safari, then install it in Settings →
               General → VPN &amp; Device Management.

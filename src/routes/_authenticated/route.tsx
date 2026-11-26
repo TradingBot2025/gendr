@@ -143,7 +143,7 @@ function ShellInner({ signOut }: { signOut: () => void }) {
         >
           <div className="flex h-14 items-center justify-between px-4">
             <Link to="/discover" className="flex items-center gap-2">
-              <span className="font-display text-xl font-bold text-primary">Gender</span>
+              <img src="/LOGO.webp" alt="Gender logo" className="h-8 w-auto" />
               <span className="hidden text-sm text-muted-foreground sm:inline">/ {pageTitle}</span>
             </Link>
             <div className="flex items-center gap-2">
