@@ -270,6 +270,36 @@ function ShellInner({ signOut }: { signOut: () => void }) {
       )}
 
       <CallOverlay />
+
+      {/* Footer — Privacy / Terms / Conditions + Edit */}
+      <footer className="mt-auto border-t bg-card p-4 text-center text-xs text-muted-foreground">
+        <div className="flex items-center justify-center gap-4 text-sm">
+          <a
+            href="/terms"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:underline hover:text-foreground transition-colors"
+          >
+            Terms & Conditions
+          </a>
+          <span className="h-3 w-px bg-border mx-2" />
+          <a
+            href="/privacy"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:underline hover:text-foreground transition-colors"
+          >
+            Privacy Policy
+          </a>
+          <span className="h-3 w-px bg-border mx-2" />
+          <Button variant="ghost" size="sm" className="px-2">
+            Edit profile
+          </Button>
+        </div>
+        <p className="mt-1 text-[10px] opacity-60">
+          Gender — Dating for every identity. All profiles are AI face-verified.
+        </p>
+      </footer>
     </div>
   );
 }

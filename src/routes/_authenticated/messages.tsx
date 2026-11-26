@@ -19,6 +19,7 @@ import {
   UserX,
   FileText,
   Star,
+  RefreshCw,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -338,6 +339,64 @@ function Messages() {
     },
   });
 
+  // Fetch my declined requests (where I requested and was declined) — these
+  // can be re-sent with "Request again".
+  const { data: myDeclinedRequests } = useQuery({
+    queryKey: ["album-requests-declined", uid],
+    enabled: !!uid,
+    refetchInterval: 10000,
+    queryFn: async () => {
+      const { data: requests } = await supabase
+        .from("album_access_requests")
+        .select("*")
+        .eq("requester_id", uid)
+        .eq("status", "declined")
+        .order("created_at", { ascending: false });
+
+      if (!requests?.length) return [];
+
+      const albumIds = [...new Set(requests.map((r) => r.album_id))];
+      const { data: albums } = await supabase
+        .from("photo_albums")
+        .select("id, name, user_id")
+        .in("id", albumIds);
+
+      if (!albums?.length) return [];
+
+      const { data: owners } = await supabase
+        .from("profiles")
+        .select("id,username,display_name")
+        .in("id", [...new Set(albums.map((a) => a.user_id))]);
+
+      const ownerPhotos = await Promise.all(
+        (albums ?? []).map(async (a) => {
+          const { data: photos } = await supabase
+            .from("photos")
+            .select("path")
+            .eq("user_id", a.user_id)
+            .order("position")
+            .limit(1);
+          return { id: a.user_id, path: photos?.[0]?.path ?? null };
+        }),
+      );
+
+      return requests.map((r) => {
+        const album = albums?.find((a) => a.id === r.album_id);
+        const owner = owners?.find((p) => p.id === album?.user_id);
+        const ownerPhoto = ownerPhotos.find((op) => op.id === album?.user_id)?.path ?? null;
+        return {
+          id: r.id,
+          album_id: r.album_id,
+          album_name: album?.name ?? "Private album",
+          owner_id: album?.user_id ?? "",
+          owner_name: owner?.display_name ?? "Someone",
+          owner_photo: ownerPhoto,
+          created_at: r.created_at,
+        };
+      });
+    },
+  });
+
   useEffect(() => {
     if (incomingRequests) setAlbumRequests(incomingRequests);
   }, [incomingRequests]);
@@ -390,17 +449,36 @@ function Messages() {
     qc.invalidateQueries({ queryKey: ["album-requests-mine"] });
   };
 
-  // Decline = remove the request row (the owner has DELETE permission). Deleting
-  // rather than leaving a 'declined' row lets the requester ask again later — the
-  // table has UNIQUE(album_id, requester_id), so a stale declined row would block
-  // any future request and the request would just "disappear".
+  // Decline = mark the request as "declined" instead of deleting it. This keeps
+  // the row (respecting the UNIQUE(album_id, requester_id) constraint) so the
+  // requester can later tap "Request again" to send a fresh pending request that
+  // the owner can approve or decline once more.
   const handleDecline = async (requestId: string) => {
-    const { error } = await supabase.from("album_access_requests").delete().eq("id", requestId);
+    const { error } = await supabase
+      .from("album_access_requests")
+      .update({ status: "declined" })
+      .eq("id", requestId);
     if (error) {
       toast.error(error.message);
       return;
     }
     toast.success("Request declined");
+    qc.invalidateQueries({ queryKey: ["album-requests-incoming"] });
+    qc.invalidateQueries({ queryKey: ["album-requests-mine"] });
+  };
+
+  // Request again — resets a declined request back to "pending" so the album
+  // owner can review it again.
+  const handleRequestAgain = async (requestId: string) => {
+    const { error } = await supabase
+      .from("album_access_requests")
+      .update({ status: "pending" })
+      .eq("id", requestId);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Request sent again");
     qc.invalidateQueries({ queryKey: ["album-requests-incoming"] });
     qc.invalidateQueries({ queryKey: ["album-requests-mine"] });
   };
@@ -635,6 +713,43 @@ function Messages() {
                         <Link to="/profile/$username" params={{ username: r.owner_id }}>
                           <Eye className="h-3 w-3 mr-1" /> View Profile
                         </Link>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* My declined requests */}
+              {myDeclinedRequests.length > 0 && (
+                <div className="space-y-3 pt-4 border-t">
+                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    Declined requests
+                  </h3>
+                  {myDeclinedRequests.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-background border"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                          {r.owner_photo ? (
+                            <img
+                              src={urls[r.owner_photo] || ""}
+                              alt={r.owner_name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-2xl font-bold">{r.owner_name?.[0]}</span>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium">{r.owner_name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            declined your request for "{r.album_name}"
+                          </p>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => handleRequestAgain(r.id)}>
+                        <RefreshCw className="mr-1 h-3 w-3" /> Request again
                       </Button>
                     </div>
                   ))}

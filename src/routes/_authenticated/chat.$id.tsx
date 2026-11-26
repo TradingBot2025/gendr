@@ -26,6 +26,9 @@ import {
   Loader2,
   Check,
   X,
+  Trash2,
+  Menu,
+  Layout,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSigned, useMyAlbumsWithPhotos, blockUser, type Message } from "@/lib/data";
@@ -214,6 +217,23 @@ function Chat() {
   // in this session. Used to swap the blurred "Tap to view" placeholder for the
   // actual image immediately, without waiting for the view-count refetch.
   const [openedSpecial, setOpenedSpecial] = useState<Set<string>>(new Set());
+  // Text message IDs the recipient has opened — used so text doesn't expire
+  // unless the message has been opened.
+  const [openedTextMsgIds, setOpenedTextMsgIds] = useState<Set<string>>(new Set());
+  // Timestamps (ms) when each message was first opened — used so the countdown
+  // timer for timed media starts at open time, not at send time.
+  const openedAtMsRef = useRef<Map<string, number>>(new Map());
+  // Slide-to-delete state
+  const [swipedMsgId, setSwipedMsgId] = useState<string | null>(null);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Long-press state
+  const [longPressMsgId, setLongPressMsgId] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [longPressMenu, setLongPressMenu] = useState<{
+    x: number;
+    y: number;
+    msg: Message;
+  } | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
@@ -611,6 +631,100 @@ function Chat() {
     }
   };
 
+  // Record when a message is first opened so the countdown timer starts at
+  // open time rather than send time.
+  const handleOpenMessage = (m: Message) => {
+      if (!openedAtMsRef.current.has(m.id)) {
+        openedAtMsRef.current.set(m.id, Date.now());
+      }
+      if (m.body && !mine(m)) {
+        // Mark text messages as opened so the expiry logic can use open time.
+        setOpenedTextMsgIds((prev) => {
+          const next = new Set(prev);
+          next.add(m.id);
+          return next;
+        });
+      }
+    }
+  };
+
+  // --- Slide-to-delete ---
+  const handleSwipeStart = (e: React.TouchEvent, msgId: string) => {
+    if (!mineFromMsg(e.currentTarget as Element, msgs, msgId)) return;
+    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const handleSwipeMove = (e: React.TouchEvent, msgId: string) => {
+    if (!swipeStartRef.current) return;
+    const dx = e.touches[0].clientX - swipeStartRef.current.x;
+    const dy = e.touches[0].clientY - swipeStartRef.current.y;
+    // Only trigger horizontal swipe on sender's own messages
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
+      setSwipedMsgId(msgId);
+    }
+  };
+
+  const handleSwipeEnd = () => {
+    swipeStartRef.current = null;
+  };
+
+  // --- Long press ---
+  const handleLongPressStart = (e: React.PointerEvent, msg: Message) => {
+    longPressTimerRef.current = setTimeout(() => {
+      setLongPressMenu({
+        x: e.clientX,
+        y: e.clientY,
+        msg,
+      });
+      setLongPressMsgId(msg.id);
+    }, 500);
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleLongPressMenuAction = (action: "profile" | "albums" | "photos") => {
+    if (!longPressMenu) return;
+    const { msg } = longPressMenu;
+    setLongPressMenu(null);
+    setLongPressMsgId(null);
+    if (action === "profile") {
+      navigate({ to: "/profile/$username", params: { username: msg.sender } });
+    } else if (action === "albums") {
+      navigate({ to: "/albums" });
+    } else if (action === "photos") {
+      // Open photo viewer for this message's attachment if it's an image
+      if (msg.attachment_path && msg.attachment_type?.startsWith("image/")) {
+        setPhotoViewerPhotos([
+          { id: msg.id, path: msg.attachment_path, attachment_type: msg.attachment_type },
+        ]);
+        setPhotoViewerIndex(0);
+        setPhotoViewerOpen(true);
+      }
+    }
+  };
+
+  // Unsend (delete) the swiped message
+  const handleDeleteSwiped = async () => {
+    if (!swipedMsgId) return;
+    await unsendMessage(swipedMsgId);
+    setSwipedMsgId(null);
+  };
+
+  const mineFromMsg = (
+    el: Element | null,
+    messages: Message[] | undefined,
+    msgId: string,
+  ): boolean => {
+    if (!messages || !el) return false;
+    const m = messages.find((msg) => msg.id === msgId);
+    return m ? m.sender === uid : false;
+  };
+
   const mine = (m: Message) => m.sender === uid;
 
   const openExpired = () => setExpNotice(true);
@@ -813,10 +927,11 @@ function Chat() {
         )}
         {msgs?.map((m) => {
           const mine = m.sender === uid;
+          const openedAtMs = openedAtMsRef.current.get(m.id);
+          const timerStartMs = openedAtMs ?? new Date(m.created_at).getTime();
           const isExpired = !!(m.expires_at && new Date(m.expires_at).getTime() < now);
           const isShortTimer = !!(
-            m.expires_at &&
-            new Date(m.expires_at).getTime() - new Date(m.created_at).getTime() < 60 * 1000
+            m.expires_at && new Date(m.expires_at).getTime() - timerStartMs < 60 * 1000
           );
           const isExpiredAndHidden = isExpired && isShortTimer;
           const isViewLimited =
@@ -834,11 +949,10 @@ function Chat() {
             isImage && m.max_views !== null && m.max_views !== undefined && m.max_views > 0;
           const isTimed = !!(isShortTimer && m.expires_at);
           const spanSec = m.expires_at
-            ? Math.round(
-                (new Date(m.expires_at).getTime() - new Date(m.created_at).getTime()) / 1000,
-              )
+            ? Math.round((new Date(m.expires_at).getTime() - timerStartMs) / 1000)
             : 0;
           const opened = openedSpecial.has(m.id);
+          const textOpened = openedTextMsgIds.has(m.id);
           const viewed = (m.view_count ?? 0) > 0;
           const exhausted = isViewLimited;
           const timedExpired = isTimed && isExpired;
@@ -848,7 +962,7 @@ function Chat() {
           // Badge text shown on the bubble (e.g. "1x", "2x", "10s")
           let specialBadge: string | null = null;
           if (isSpecial) {
-            if (isTimed) specialBadge = `${spanSec || 10}s`;
+            if (isTimed) specialBadge = `${Math.max(spanSec, 0) || 10}s`;
             else if (m.max_views === 1) specialBadge = "1x";
             else specialBadge = `${m.max_views}x`;
           }
@@ -856,11 +970,34 @@ function Chat() {
           // Don't render short-timer expired messages at all
           if (isExpiredAndHidden) return null;
 
+          // Text messages should not disappear unless opened AND expired.
+          const isTextExpired = m.body && textOpened && isExpired && !isShortTimer;
+
           return (
-            <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+            <div
+              key={m.id}
+              className={`flex ${mine ? "justify-end" : "justify-start"}`}
+              onTouchStart={(e) => handleSwipeStart(e, m.id)}
+              onTouchMove={(e) => handleSwipeMove(e, m.id)}
+              onTouchEnd={handleSwipeEnd}
+              onPointerDown={(e) => handleLongPressStart(e, m)}
+              onPointerUp={handleLongPressEnd}
+              onPointerLeave={handleLongPressEnd}
+            >
               <div
-                className={`group max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${mine ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-card"} ${isExpired && !isShortTimer ? "opacity-60" : ""} ${isUnsent ? "bg-muted" : ""}`}
+                className={`group max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-soft ${
+                  mine
+                    ? "rounded-br-sm bg-primary text-primary-foreground"
+                    : "rounded-bl-sm bg-card"
+                } ${isExpired && !isShortTimer ? "opacity-60" : ""} ${
+                  isUnsent ? "bg-muted" : ""
+                } ${swipedMsgId === m.id ? "translate-x-[-60px]" : ""} relative`}
               >
+                {swipedMsgId === m.id && mine && (
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-4 text-destructive">
+                    <Trash2 className="h-5 w-5" />
+                  </div>
+                )}
                 {isUnsent ? (
                   <div className="flex items-center gap-2 text-xs opacity-60">
                     <RotateCcw className="h-3 w-3" />
@@ -899,11 +1036,18 @@ function Chat() {
                             isTimed && !mine && m.expires_at ? (
                               <TimedImageView
                                 url={url}
-                                expiresAtMs={new Date(m.expires_at).getTime()}
+                                expiresAtMs={
+                                  openedAtMs
+                                    ? new Date(openedAtMs).getTime() +
+                                      (new Date(m.expires_at).getTime() -
+                                        new Date(m.created_at).getTime())
+                                    : new Date(m.expires_at).getTime()
+                                }
                               />
                             ) : (
                               <div
                                 onClick={() => {
+                                  handleOpenMessage(m);
                                   if (isSpecial && !mine && !viewed) {
                                     handleOpenSpecial(m);
                                     return;
@@ -938,13 +1082,18 @@ function Chat() {
                             <div className="h-32 w-48 animate-pulse rounded-xl bg-muted" />
                           )
                         ) : isVideo ? (
-                          url && <video src={url} controls className="mb-1 max-h-64 rounded-xl" />
+                          url && (
+                            <div onClick={() => handleOpenMessage(m)} className="cursor-pointer">
+                              <video src={url} controls className="mb-1 max-h-64 rounded-xl" />
+                            </div>
+                          )
                         ) : (
                           <a
                             href={url}
                             target="_blank"
                             rel="noreferrer"
                             className="mb-1 flex items-center gap-2 underline"
+                            onClick={() => handleOpenMessage(m)}
                           >
                             <FileText className="h-4 w-4" />
                             {m.attachment_name}
@@ -966,7 +1115,31 @@ function Chat() {
                         )}
                       </>
                     )}
-                    {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                    {m.body && !isTextExpired && (
+                      <>
+                        <p
+                          className="whitespace-pre-wrap break-words"
+                          onClick={() => handleOpenMessage(m)}
+                        >
+                          {m.body}
+                        </p>
+                        {isExpired && !isShortTimer && textOpened && (
+                          <div className="text-[10px] text-center opacity-60 mt-1">
+                            Expired — deleted after {disappearLabel}
+                          </div>
+                        )}
+                        {isExpired && !isShortTimer && !textOpened && (
+                          <div className="text-[10px] text-center opacity-60 mt-1">
+                            Message will expire after {disappearLabel} once opened
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {!m.body && isTextExpired && (
+                      <div className="text-[10px] text-center opacity-60 mt-1">
+                        Expired — deleted after {disappearLabel}
+                      </div>
+                    )}
                     <div className="mt-0.5 flex items-center justify-between">
                       <span className="text-[10px] opacity-70">
                         {new Date(m.created_at).toLocaleTimeString([], {
@@ -1010,17 +1183,35 @@ function Chat() {
                         </DropdownMenu>
                       )}
                     </div>
-                    {isExpired && !isShortTimer && (
-                      <div className="text-[10px] text-center opacity-60 mt-1">
-                        Expired — deleted after {disappearLabel}
-                      </div>
-                    )}
                     {isViewLimited && (
                       <div className="text-[10px] text-center opacity-60 mt-1">
                         View limit reached
                       </div>
                     )}
                   </>
+                )}
+                {longPressMenu?.msg.id === m.id && (
+                  <div
+                    className="absolute z-50 mt-2 w-56 rounded-xl border bg-card shadow-lg"
+                    style={{
+                      top: longPressMenu.y,
+                      left: longPressMenu.x,
+                    }}
+                  >
+                    <div className="px-2 py-1">
+                      <DropdownMenuItem onClick={() => handleLongPressMenuAction("profile")}>
+                        <User className="mr-2 h-4 w-4" /> View profile
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleLongPressMenuAction("albums")}>
+                        <Layout className="mr-2 h-4 w-4" /> View albums
+                      </DropdownMenuItem>
+                      {m.attachment_path && m.attachment_type?.startsWith("image/") && (
+                        <DropdownMenuItem onClick={() => handleLongPressMenuAction("photos")}>
+                          <Image className="mr-2 h-4 w-4" /> View photo
+                        </DropdownMenuItem>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
